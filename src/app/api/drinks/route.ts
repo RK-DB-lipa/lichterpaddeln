@@ -13,7 +13,6 @@ export async function GET() {
       .where(eq(drinks.isActive, true))
       .orderBy(drinks.sortOrder);
 
-    // Calculate gross price for each drink
     const withGross = activeDrinks.map((d) => ({
       ...d,
       priceGross: +(d.priceNet * (1 + d.taxRate / 100)).toFixed(2),
@@ -38,7 +37,7 @@ export async function POST(req: NextRequest) {
     }
 
     const body = await req.json();
-    const { name, priceNet, taxRate, hasDeposit, depositAmount, color, imageUrl, sortOrder } =
+    const { name, priceNet, taxRate, hasDeposit, depositAmount, color, imageUrl, sortOrder, isPourDrink } =
       body;
 
     if (!name || priceNet === undefined) {
@@ -59,6 +58,7 @@ export async function POST(req: NextRequest) {
         color: color || "#3B82F6",
         imageUrl: imageUrl || null,
         sortOrder: sortOrder !== undefined ? parseInt(sortOrder) : 0,
+        isPourDrink: isPourDrink !== undefined ? isPourDrink : false,
       })
       .returning();
 

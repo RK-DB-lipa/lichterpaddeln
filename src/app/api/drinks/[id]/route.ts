@@ -18,7 +18,7 @@ export async function PUT(
     const { id } = await params;
     const drinkId = parseInt(id);
     const body = await req.json();
-    const { name, priceNet, taxRate, hasDeposit, depositAmount, color, imageUrl, isActive, sortOrder } =
+    const { name, priceNet, taxRate, hasDeposit, depositAmount, color, imageUrl, isActive, sortOrder, isPourDrink } =
       body;
 
     const updateData: Partial<typeof drinks.$inferInsert> = {};
@@ -31,6 +31,7 @@ export async function PUT(
     if (imageUrl !== undefined) updateData.imageUrl = imageUrl || null;
     if (isActive !== undefined) updateData.isActive = isActive;
     if (sortOrder !== undefined) updateData.sortOrder = parseInt(sortOrder);
+    if (isPourDrink !== undefined) updateData.isPourDrink = isPourDrink;
 
     const [updated] = await db
       .update(drinks)

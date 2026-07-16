@@ -12,6 +12,7 @@ type Drink = {
   color: string;
   imageUrl: string | null;
   priceGross: number;
+  isPourDrink: boolean;
 };
 
 type SalesPoint = {
@@ -39,10 +40,18 @@ export default function POSPage() {
   const [showCalculator, setShowCalculator] = useState(false);
   const [editingItem, setEditingItem] = useState<number | null>(null);
   const [editQuantity, setEditQuantity] = useState("1");
+  const [pourSent, setPourSent] = useState(false);
   const [lastOrder, setLastOrder] = useState<{
     orderId: number;
     totalGross: number;
   } | null>(null);
+
+  // Receipt panel state
+  const [receiptMinimized, setReceiptMinimized] = useState(false);
+  const [receiptPos, setReceiptPos] = useState({ x: 0, y: 0 });
+  const [isDragging, setIsDragging] = useState(false);
+  const dragOffset = useRef({ x: 0, y: 0 });
+  const receiptRef = useRef<HTMLDivElement>(null);
 
   const wakeLockRef = useRef<WakeLockSentinel | null>(null);
 
@@ -56,9 +65,7 @@ export default function POSPage() {
             requestWakeLock();
           });
         }
-      } catch {
-        // ignore
-      }
+      } catch {}
     }
     requestWakeLock();
     const handleVisibility = () => {
@@ -119,6 +126,7 @@ export default function POSPage() {
   }
 
   const addDrink = useCallback((drink: Drink) => {
+    setPourSent(false);
     setOrderItems((prev) => {
       const next = new Map(prev);
       const existing = next.get(drink.id);
@@ -138,6 +146,7 @@ export default function POSPage() {
   }, []);
 
   const addDepositReturn = useCallback((count: number) => {
+    setOrderItems((prev) => new Map(prev));
     setDepositReturned((prev) => prev + count);
   }, []);
 
@@ -167,6 +176,7 @@ export default function POSPage() {
   const cancelOrder = useCallback(() => {
     setOrderItems(new Map());
     setDepositReturned(0);
+    setPourSent(false);
     setShowCancelConfirm(false);
   }, []);
 
@@ -185,7 +195,41 @@ export default function POSPage() {
   const hasItems = items.length > 0 || depositReturned > 0;
   const totalDrinksCount = items.reduce((sum, item) => sum + item.quantity, 0);
 
+  const hasPourDrinks = items.some((item) => {
+    const drink = drinks.find((d) => d.id === item.drinkId);
+    return drink?.isPourDrink;
+  });
+
   const selectedSalesPoint = salesPoints.find((sp) => sp.id === selectedSalesPointId);
+
+  const sendToPour = useCallback(async () => {
+    if (!selectedSalesPointId) return;
+    const pourItems = items
+      .filter((item) => {
+        const drink = drinks.find((d) => d.id === item.drinkId);
+        return drink?.isPourDrink;
+      })
+      .map((item) => ({ drinkName: item.drinkName, quantity: item.quantity }));
+
+    if (pourItems.length === 0) return;
+
+    try {
+      const res = await fetch("/api/pour/queue", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          salesPointId: selectedSalesPointId,
+          items: pourItems,
+        }),
+      });
+      if (res.ok) {
+        setPourSent(true);
+        setTimeout(() => setPourSent(false), 2000);
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  }, [items, drinks, selectedSalesPointId]);
 
   const handleReset = useCallback(async () => {
     if (!selectedSalesPointId) return;
@@ -215,13 +259,59 @@ export default function POSPage() {
     }
     setOrderItems(new Map());
     setDepositReturned(0);
+    setPourSent(false);
     setShowResetConfirm(false);
   }, [items, depositReturned, grandTotal, selectedSalesPointId]);
+
+  // Drag handlers for receipt
+  const handleDragStart = (e: React.MouseEvent | React.TouchEvent) => {
+    if (!receiptRef.current) return;
+    setIsDragging(true);
+    const clientX = "touches" in e ? e.touches[0].clientX : e.clientX;
+    const clientY = "touches" in e ? e.touches[0].clientY : e.clientY;
+    const rect = receiptRef.current.getBoundingClientRect();
+    dragOffset.current = {
+      x: clientX - rect.left,
+      y: clientY - rect.top,
+    };
+  };
+
+  const handleDragMove = useCallback(
+    (e: MouseEvent | TouchEvent) => {
+      if (!isDragging) return;
+      const clientX = "touches" in e ? e.touches[0].clientX : e.clientX;
+      const clientY = "touches" in e ? e.touches[0].clientY : e.clientY;
+      setReceiptPos({
+        x: clientX - dragOffset.current.x,
+        y: clientY - dragOffset.current.y,
+      });
+    },
+    [isDragging]
+  );
+
+  const handleDragEnd = useCallback(() => {
+    setIsDragging(false);
+  }, []);
+
+  useEffect(() => {
+    if (isDragging) {
+      window.addEventListener("mousemove", handleDragMove);
+      window.addEventListener("mouseup", handleDragEnd);
+      window.addEventListener("touchmove", handleDragMove);
+      window.addEventListener("touchend", handleDragEnd);
+      return () => {
+        window.removeEventListener("mousemove", handleDragMove);
+        window.removeEventListener("mouseup", handleDragEnd);
+        window.removeEventListener("touchmove", handleDragMove);
+        window.removeEventListener("touchend", handleDragEnd);
+      };
+    }
+  }, [isDragging, handleDragMove, handleDragEnd]);
 
   return (
     <div className="h-screen flex flex-col bg-gray-900 text-white overflow-hidden">
       {/* Header */}
-      <header className="flex items-center justify-between px-3 py-1.5 bg-gray-800 border-b border-gray-700 shrink-0">
+      <header className="flex items-center justify-between px-3 py-1.5 bg-gray-800 border-b border-gray-700 shrink-0 z-20">
         <div className="flex items-center gap-2 min-w-0">
           <span className="text-lg">🍺</span>
           <span className="font-bold text-sm md:text-base truncate">
@@ -249,9 +339,9 @@ export default function POSPage() {
       </header>
 
       {/* Main area */}
-      <div className="flex flex-1 overflow-hidden" style={{ minHeight: 0 }}>
-        {/* Deposit return buttons + cancel */}
-        <aside className="w-14 md:w-16 shrink-0 bg-gray-800/50 border-r border-gray-700 flex flex-col items-center py-1.5 gap-1 overflow-y-auto">
+      <div className="flex flex-1 overflow-hidden relative" style={{ minHeight: 0 }}>
+        {/* Deposit return buttons + cancel - always on top */}
+        <aside className="w-14 md:w-16 shrink-0 bg-gray-800/90 border-r border-gray-700 flex flex-col items-center py-1.5 gap-1 overflow-y-auto z-30">
           <div className="text-[9px] text-gray-400 font-bold text-center mb-0.5 leading-tight">
             Pfand<br />zurück
           </div>
@@ -268,7 +358,6 @@ export default function POSPage() {
               <span className="text-[8px] opacity-80">{n}×</span>
             </button>
           ))}
-          {/* Cancel order button */}
           {hasItems && (
             <>
               <div className="w-full border-t border-gray-600 my-1" />
@@ -277,7 +366,7 @@ export default function POSPage() {
                 className="w-10 h-10 md:w-11 md:h-11 rounded-lg font-bold text-[10px]
                   bg-red-700 hover:bg-red-600 active:bg-red-800
                   active:scale-95 transition-all shadow-md
-                  flex items-center justify-center leading-tight"
+                  flex items-center justify-center leading-tight z-50"
                 title="Bestellung abbrechen"
               >
                 ✕<br />Abbr.
@@ -287,7 +376,7 @@ export default function POSPage() {
         </aside>
 
         {/* Drink buttons grid */}
-        <main className="flex-1 overflow-y-auto p-1.5 md:p-2">
+        <main className="flex-1 overflow-y-auto p-1.5 md:p-2 relative">
           {drinks.length === 0 ? (
             <div className="flex items-center justify-center h-full text-gray-500">
               <div className="text-center">
@@ -345,120 +434,151 @@ export default function POSPage() {
             </div>
           )}
         </main>
+
+        {/* Floating Receipt Panel */}
+        {hasItems && (
+          <div
+            ref={receiptRef}
+            className={`absolute z-40 shadow-2xl border-2 border-gray-500 rounded-xl overflow-hidden select-none ${
+              isDragging ? "cursor-grabbing" : "cursor-grab"
+            } ${receiptMinimized ? "w-auto" : "w-72 md:w-80"}`}
+            style={{
+              left: receiptPos.x || "auto",
+              top: receiptPos.y || "auto",
+              right: receiptPos.x ? undefined : 8,
+              bottom: receiptPos.y ? undefined : 8,
+            }}
+          >
+            {/* Drag handle / header */}
+            <div
+              onMouseDown={handleDragStart}
+              onTouchStart={handleDragStart}
+              className="bg-gray-700 px-3 py-2 flex items-center justify-between border-b border-gray-600"
+            >
+              <span className="text-xs font-bold text-gray-300 flex items-center gap-1">
+                🖐️ {totalDrinksCount} Getränke
+              </span>
+              <div className="flex items-center gap-1">
+                <button
+                  onClick={() => setReceiptMinimized((p) => !p)}
+                  className="text-gray-400 hover:text-white text-xs px-2 py-0.5 rounded bg-gray-600 hover:bg-gray-500"
+                >
+                  {receiptMinimized ? "▲" : "▼"}
+                </button>
+                <button
+                  onClick={() => {
+                    setReceiptPos({ x: 0, y: 0 });
+                    setReceiptMinimized(false);
+                  }}
+                  className="text-gray-400 hover:text-white text-xs px-2 py-0.5 rounded bg-gray-600 hover:bg-gray-500"
+                  title="Zurücksetzen"
+                >
+                  ⌂
+                </button>
+              </div>
+            </div>
+
+            {!receiptMinimized && (
+              <div className="bg-gray-800">
+                {/* Items */}
+                <div className="px-3 py-2 space-y-1 max-h-48 overflow-y-auto">
+                  {items.map((item) => (
+                    <div
+                      key={item.drinkId}
+                      className="flex justify-between items-center text-sm md:text-base border-b border-gray-700/40 py-1"
+                    >
+                      <span className="flex-1 min-w-0 truncate font-medium flex items-center gap-1.5">
+                        <button
+                          onClick={() => {
+                            setEditingItem(item.drinkId);
+                            setEditQuantity(item.quantity.toString());
+                          }}
+                          className="text-blue-400 hover:text-blue-300 text-xs underline shrink-0"
+                        >
+                          ✎
+                        </button>
+                        <span className="truncate">
+                          {item.drinkName}{" "}
+                          <span className="text-gray-400 text-xs">×{item.quantity}</span>
+                        </span>
+                      </span>
+                      <span className="tabular-nums font-semibold text-sm md:text-base">
+                        {(item.unitPriceGross * item.quantity).toFixed(2)} €
+                      </span>
+                      <button
+                        onClick={() => removeItem(item.drinkId)}
+                        className="ml-1.5 text-red-400 hover:text-red-300 text-sm px-1 shrink-0"
+                      >
+                        ✕
+                      </button>
+                    </div>
+                  ))}
+                  {totalDepositCharged > 0 && (
+                    <div className="flex justify-between items-baseline text-sm md:text-base py-1 text-amber-400">
+                      <span>Pfand (behalten)</span>
+                      <span className="tabular-nums font-semibold">+{totalDepositCharged.toFixed(2)} €</span>
+                    </div>
+                  )}
+                  {depositReturned > 0 && (
+                    <div className="flex justify-between items-baseline text-sm md:text-base py-1 text-red-400">
+                      <span>Pfand zurück ({depositReturned})</span>
+                      <span className="tabular-nums font-semibold">-{totalDepositReturn.toFixed(2)} €</span>
+                    </div>
+                  )}
+                </div>
+
+                {/* Totals */}
+                <div className="border-t border-gray-600 px-3 py-2 bg-gray-750 bg-gray-700/50">
+                  <div className="flex justify-between items-center text-sm md:text-base">
+                    <span className="text-gray-300">
+                      Getränke:{" "}
+                      <span className="tabular-nums font-bold">{totalDrinkGross.toFixed(2)} €</span>
+                    </span>
+                    {netDeposit !== 0 && (
+                      <span className="text-amber-400 text-xs md:text-sm">
+                        Pfand: {netDeposit > 0 ? "+" : ""}
+                        <span className="tabular-nums">{netDeposit.toFixed(2)} €</span>
+                      </span>
+                    )}
+                  </div>
+                  <div className="flex justify-between items-center mt-1">
+                    <span className="font-bold text-base md:text-lg text-green-400 tabular-nums">
+                      Gesamt: {grandTotal.toFixed(2)} €
+                    </span>
+                  </div>
+                </div>
+
+                {/* Action buttons */}
+                <div className="px-3 pb-2 pt-1 flex gap-2">
+                  {hasPourDrinks && (
+                    <button
+                      onClick={sendToPour}
+                      className={`w-12 h-12 rounded-full font-bold text-xs shrink-0 flex flex-col items-center justify-center transition-all shadow-lg ${
+                        pourSent ? "bg-green-500" : "bg-orange-600 hover:bg-orange-500 active:bg-orange-700"
+                      } active:scale-95 border-2 border-white/20`}
+                    >
+                      <span className="text-base">🍺</span>
+                      <span className="text-[8px]">{pourSent ? "OK!" : "Zapf"}</span>
+                    </button>
+                  )}
+                  <button
+                    onClick={() => setShowResetConfirm(true)}
+                    className="flex-1 py-2.5 rounded-xl font-bold text-sm md:text-base bg-red-600 hover:bg-red-500 active:bg-red-700 active:scale-[0.98] transition-all shadow-lg border border-red-400/30"
+                  >
+                    ✅ Abschließen
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
-      {/* Order summary - compact, no scroll */}
-      <footer className="shrink-0 bg-gray-800 border-t-2 border-gray-600 flex flex-col">
-        <div className="px-2 md:px-3 py-1">
-          {items.length === 0 && depositReturned === 0 ? (
-            <div className="text-center text-gray-500 text-xs py-1">
-              Bestellung leer – Getränk antippen zum Hinzufügen
-            </div>
-          ) : (
-            <div>
-              <div className="flex justify-between items-center text-[10px] text-gray-400 uppercase tracking-wider mb-0.5">
-                <span>Getränke: <span className="text-white font-bold">{totalDrinksCount}</span> Stück</span>
-                <span className="tabular-nums">Einzelpreis</span>
-                <span className="tabular-nums">Gesamt</span>
-              </div>
-              <div className="space-y-0">
-                {items.map((item) => (
-                  <div
-                    key={item.drinkId}
-                    className="flex justify-between items-center text-xs md:text-sm border-t border-gray-700/40 py-0.5 group"
-                  >
-                    <span className="flex-1 min-w-0 truncate font-medium flex items-center gap-1">
-                      <button
-                        onClick={() => {
-                          setEditingItem(item.drinkId);
-                          setEditQuantity(item.quantity.toString());
-                        }}
-                        className="text-blue-400 hover:text-blue-300 text-[10px] underline"
-                        title="Anzahl ändern"
-                      >
-                        ✎
-                      </button>
-                      {item.drinkName} <span className="text-gray-400">×{item.quantity}</span>
-                    </span>
-                    <span className="tabular-nums text-gray-400 mx-2">
-                      {item.unitPriceGross.toFixed(2)} €
-                    </span>
-                    <span className="tabular-nums font-semibold w-16 text-right">
-                      {(item.unitPriceGross * item.quantity).toFixed(2)} €
-                    </span>
-                    <button
-                      onClick={() => removeItem(item.drinkId)}
-                      className="ml-1 text-red-400 hover:text-red-300 text-xs px-1"
-                      title="Entfernen"
-                    >
-                      ✕
-                    </button>
-                  </div>
-                ))}
-                {totalDepositCharged > 0 && (
-                  <div className="flex justify-between items-baseline text-xs border-t border-gray-700/40 py-0.5 text-amber-400">
-                    <span className="flex-1">Pfand (behalten)</span>
-                    <span className="tabular-nums font-semibold w-16 text-right">
-                      +{totalDepositCharged.toFixed(2)} €
-                    </span>
-                  </div>
-                )}
-                {depositReturned > 0 && (
-                  <div className="flex justify-between items-baseline text-xs border-t border-gray-700/40 py-0.5 text-red-400">
-                    <span className="flex-1">Pfand zurück ({depositReturned} Becher)</span>
-                    <span className="tabular-nums font-semibold w-16 text-right">
-                      -{totalDepositReturn.toFixed(2)} €
-                    </span>
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
-        </div>
-
-        <div className="border-t border-gray-600 px-2 md:px-3 py-1 bg-gray-700/30">
-          <div className="flex justify-between items-center text-xs md:text-sm">
-            <span className="text-gray-300">
-              Getränke: <span className="tabular-nums">{totalDrinkGross.toFixed(2)} €</span>
-              {netDeposit !== 0 && (
-                <span className="text-amber-400 ml-2">
-                  Pfand: {netDeposit > 0 ? "+" : ""}
-                  <span className="tabular-nums">{netDeposit.toFixed(2)} €</span>
-                </span>
-              )}
-            </span>
-            <span className="font-bold text-sm md:text-base text-green-400 tabular-nums">
-              Gesamt: {grandTotal.toFixed(2)} €
-            </span>
-          </div>
-        </div>
-
-        <div className="px-2 md:px-3 pb-1.5 pt-1 shrink-0">
-          {hasItems ? (
-            <button
-              onClick={() => setShowResetConfirm(true)}
-              className="w-full py-2 md:py-2.5 rounded-xl font-bold text-sm md:text-base
-                bg-red-600 hover:bg-red-500 active:bg-red-700
-                active:scale-[0.98] transition-all shadow-lg
-                border border-red-400/30"
-            >
-              ✅ Bestellung abschließen & Kasse zurücksetzen
-            </button>
-          ) : (
-            <div className="text-center text-gray-500 text-[10px] py-1">
-              Bereit für neue Bestellung
-            </div>
-          )}
-        </div>
-      </footer>
-
-      {/* Reset Confirmation Modal */}
+      {/* Modals */}
       {showResetConfirm && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
           <div className="bg-gray-800 rounded-2xl p-5 max-w-sm w-full shadow-2xl border border-gray-600">
-            <h2 className="text-lg font-bold mb-2 text-center">
-              ⚠️ Bestellung abschließen?
-            </h2>
+            <h2 className="text-lg font-bold mb-2 text-center">⚠️ Bestellung abschließen?</h2>
             <div className="mb-3 bg-gray-700/50 rounded-lg p-2">
               <label className="block text-xs text-gray-400 mb-1">Verkaufsstelle</label>
               <select
@@ -515,9 +635,8 @@ export default function POSPage() {
         </div>
       )}
 
-      {/* Cancel Confirmation Modal */}
       {showCancelConfirm && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/70 p-4">
           <div className="bg-gray-800 rounded-2xl p-5 max-w-sm w-full shadow-2xl border border-gray-600">
             <h2 className="text-lg font-bold mb-3 text-center text-red-400">
               ⚠️ Bestellung abbrechen?
@@ -548,17 +667,12 @@ export default function POSPage() {
         </div>
       )}
 
-      {/* Edit Quantity Modal */}
       {editingItem !== null && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
           <div className="bg-gray-800 rounded-2xl p-5 max-w-xs w-full shadow-2xl border border-gray-600">
-            <h3 className="text-lg font-bold mb-3 text-center">
-              Anzahl ändern
-            </h3>
+            <h3 className="text-lg font-bold mb-3 text-center">Anzahl ändern</h3>
             <div className="text-center mb-3">
-              <p className="text-sm text-gray-300">
-                {orderItems.get(editingItem)?.drinkName}
-              </p>
+              <p className="text-sm text-gray-300">{orderItems.get(editingItem)?.drinkName}</p>
             </div>
             <div className="mb-4">
               <input
@@ -580,9 +694,7 @@ export default function POSPage() {
               <button
                 onClick={() => {
                   const qty = parseInt(editQuantity);
-                  if (!isNaN(qty)) {
-                    updateItemQuantity(editingItem, qty);
-                  }
+                  if (!isNaN(qty)) updateItemQuantity(editingItem, qty);
                   setEditingItem(null);
                 }}
                 className="flex-1 py-2.5 rounded-xl font-bold bg-blue-600 hover:bg-blue-500 text-sm active:scale-[0.97] transition-all"
@@ -594,14 +706,12 @@ export default function POSPage() {
         </div>
       )}
 
-      {/* Calculator Modal */}
       {showCalculator && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/70 p-4">
           <CalculatorModal total={grandTotal} onClose={() => setShowCalculator(false)} />
         </div>
       )}
 
-      {/* Success Toast */}
       {showSuccess && lastOrder && (
         <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 bg-green-700 text-white px-5 py-2.5 rounded-xl shadow-2xl font-bold text-sm animate-bounce">
           ✅ Bestellung #{lastOrder.orderId} gespeichert – {lastOrder.totalGross.toFixed(2)} €
@@ -652,7 +762,11 @@ function CalculatorModal({ total, onClose }: { total: number; onClose: () => voi
       {givenNum > 0 && (
         <div className="text-center mb-3 p-2 rounded-lg bg-gray-700/50">
           <div className="text-xs text-gray-400">Wechselgeld</div>
-          <div className={`text-2xl font-extrabold tabular-nums ${change >= 0 ? "text-green-400" : "text-red-400"}`}>
+          <div
+            className={`text-2xl font-extrabold tabular-nums ${
+              change >= 0 ? "text-green-400" : "text-red-400"
+            }`}
+          >
             {change >= 0 ? "" : "-"}
             {Math.abs(change).toFixed(2)} €
           </div>
