@@ -40,15 +40,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Check count limit
     const existing = await db.select().from(salesPoints);
-    if (existing.length >= 5) {
-      return NextResponse.json(
-        { error: "Maximal 5 Verkaufsstellen erlaubt" },
-        { status: 400 }
-      );
-    }
-
     const [point] = await db
       .insert(salesPoints)
       .values({

@@ -76,12 +76,16 @@ export default function AdminPage() {
   const [showSalesPointForm, setShowSalesPointForm] = useState(false);
   const [spFormName, setSpFormName] = useState("");
   const [spFormError, setSpFormError] = useState("");
+  const [editingSalesPoint, setEditingSalesPoint] = useState<SalesPoint | null>(null);
+  const [spEditName, setSpEditName] = useState("");
 
   const [orders, setOrders] = useState<Order[]>([]);
   const [drinkSummary, setDrinkSummary] = useState<OrderItem[]>([]);
   const [totals, setTotals] = useState<OrderTotals | null>(null);
   const [activeTab, setActiveTab] = useState<"drinks" | "salesPoints" | "orders">("drinks");
   const [orderFilter, setOrderFilter] = useState<string>("");
+  const [showResetConfirm, setShowResetConfirm] = useState(false);
+  const [resetTarget, setResetTarget] = useState<string>("");
 
   const checkAuth = useCallback(async () => {
     try {
@@ -100,9 +104,7 @@ export default function AdminPage() {
   const fetchDrinks = useCallback(async () => {
     try {
       const res = await fetch("/api/drinks");
-      if (res.ok) {
-        setDrinks(await res.json());
-      }
+      if (res.ok) setDrinks(await res.json());
     } catch (err) {
       console.error(err);
     }
@@ -111,9 +113,7 @@ export default function AdminPage() {
   const fetchSalesPoints = useCallback(async () => {
     try {
       const res = await fetch("/api/sales-points");
-      if (res.ok) {
-        setSalesPoints(await res.json());
-      }
+      if (res.ok) setSalesPoints(await res.json());
     } catch (err) {
       console.error(err);
     }
@@ -121,9 +121,7 @@ export default function AdminPage() {
 
   const fetchOrders = useCallback(async () => {
     try {
-      const url = orderFilter
-        ? `/api/orders?salesPointId=${orderFilter}`
-        : "/api/orders";
+      const url = orderFilter ? `/api/orders?salesPointId=${orderFilter}` : "/api/orders";
       const res = await fetch(url);
       if (res.ok) {
         const data = await res.json();
@@ -199,12 +197,10 @@ export default function AdminPage() {
   async function handleSaveDrink(e: React.FormEvent) {
     e.preventDefault();
     setFormError("");
-
     if (!formData.name || !formData.priceNet) {
       setFormError("Name und Nettopreis sind erforderlich");
       return;
     }
-
     const body = {
       name: formData.name,
       priceNet: parseFloat(formData.priceNet),
@@ -215,19 +211,14 @@ export default function AdminPage() {
       imageUrl: formData.imageUrl || null,
       sortOrder: parseInt(formData.sortOrder) || 0,
     };
-
     try {
-      const url = editingDrink
-        ? `/api/drinks/${editingDrink.id}`
-        : "/api/drinks";
+      const url = editingDrink ? `/api/drinks/${editingDrink.id}` : "/api/drinks";
       const method = editingDrink ? "PUT" : "POST";
-
       const res = await fetch(url, {
         method,
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
       });
-
       if (res.ok) {
         setShowDrinkForm(false);
         fetchDrinks();
@@ -276,6 +267,25 @@ export default function AdminPage() {
     }
   }
 
+  async function handleUpdateSalesPoint(e: React.FormEvent) {
+    e.preventDefault();
+    if (!editingSalesPoint || !spEditName.trim()) return;
+    try {
+      const res = await fetch(`/api/sales-points/${editingSalesPoint.id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: spEditName.trim() }),
+      });
+      if (res.ok) {
+        setEditingSalesPoint(null);
+        setSpEditName("");
+        fetchSalesPoints();
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  }
+
   async function handleDeleteSalesPoint(id: number) {
     if (!confirm("Verkaufsstelle deaktivieren?")) return;
     try {
@@ -286,11 +296,28 @@ export default function AdminPage() {
     }
   }
 
+  async function handleResetCounters() {
+    try {
+      const body = resetTarget ? { salesPointId: parseInt(resetTarget) } : {};
+      const res = await fetch("/api/admin/reset", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      if (res.ok) {
+        setShowResetConfirm(false);
+        setResetTarget("");
+        fetchOrders();
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  }
+
   const getSalesPointName = (id: number) => {
     return salesPoints.find((sp) => sp.id === id)?.name || `ID ${id}`;
   };
 
-  // Loading state
   if (authenticated === null) {
     return (
       <div className="min-h-screen bg-gray-900 flex items-center justify-center text-white">
@@ -299,7 +326,6 @@ export default function AdminPage() {
     );
   }
 
-  // Login form
   if (!authenticated) {
     return (
       <div className="min-h-screen bg-gray-900 flex items-center justify-center p-4">
@@ -317,41 +343,31 @@ export default function AdminPage() {
           )}
           <div className="space-y-4">
             <div>
-              <label className="block text-sm text-gray-400 mb-1">
-                Benutzername
-              </label>
+              <label className="block text-sm text-gray-400 mb-1">Benutzername</label>
               <input
                 type="text"
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
-                className="w-full px-4 py-3 rounded-xl bg-gray-700 text-white border border-gray-600
-                  focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                className="w-full px-4 py-3 rounded-xl bg-gray-700 text-white border border-gray-600 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
                 autoFocus
               />
             </div>
             <div>
-              <label className="block text-sm text-gray-400 mb-1">
-                Passwort
-              </label>
+              <label className="block text-sm text-gray-400 mb-1">Passwort</label>
               <input
                 type="password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                className="w-full px-4 py-3 rounded-xl bg-gray-700 text-white border border-gray-600
-                  focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                className="w-full px-4 py-3 rounded-xl bg-gray-700 text-white border border-gray-600 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
               />
             </div>
             <button
               type="submit"
-              className="w-full py-3 rounded-xl font-bold bg-blue-600 hover:bg-blue-500
-                active:scale-[0.98] transition-all"
+              className="w-full py-3 rounded-xl font-bold bg-blue-600 hover:bg-blue-500 active:scale-[0.98] transition-all"
             >
               Anmelden
             </button>
-            <a
-              href="/"
-              className="block text-center text-sm text-gray-400 hover:text-white"
-            >
+            <a href="/" className="block text-center text-sm text-gray-400 hover:text-white">
               ← Zurück zur Kasse
             </a>
           </div>
@@ -360,33 +376,25 @@ export default function AdminPage() {
     );
   }
 
-  // Admin dashboard
   return (
-    <div className="min-h-screen bg-gray-900 text-white overflow-y-auto">
+    <div className="h-screen bg-gray-900 text-white flex flex-col overflow-hidden">
       {/* Header */}
-      <header className="bg-gray-800 border-b border-gray-700 px-4 py-3 flex items-center justify-between">
+      <header className="bg-gray-800 border-b border-gray-700 px-4 py-3 flex items-center justify-between shrink-0">
         <h1 className="text-lg font-bold">⚙️ Admin-Bereich</h1>
         <div className="flex items-center gap-3">
-          <a href="/" className="text-sm text-blue-400 hover:underline">
-            ← Kasse
-          </a>
-          <button
-            onClick={handleLogout}
-            className="text-sm text-red-400 hover:text-red-300"
-          >
+          <a href="/" className="text-sm text-blue-400 hover:underline">← Kasse</a>
+          <button onClick={handleLogout} className="text-sm text-red-400 hover:text-red-300">
             Abmelden
           </button>
         </div>
       </header>
 
       {/* Tab navigation */}
-      <div className="flex border-b border-gray-700">
+      <div className="flex border-b border-gray-700 shrink-0">
         <button
           onClick={() => setActiveTab("drinks")}
           className={`flex-1 py-3 text-center font-bold text-sm ${
-            activeTab === "drinks"
-              ? "border-b-2 border-blue-500 text-blue-400"
-              : "text-gray-400"
+            activeTab === "drinks" ? "border-b-2 border-blue-500 text-blue-400" : "text-gray-400"
           }`}
         >
           🍺 Getränke
@@ -394,9 +402,7 @@ export default function AdminPage() {
         <button
           onClick={() => setActiveTab("salesPoints")}
           className={`flex-1 py-3 text-center font-bold text-sm ${
-            activeTab === "salesPoints"
-              ? "border-b-2 border-blue-500 text-blue-400"
-              : "text-gray-400"
+            activeTab === "salesPoints" ? "border-b-2 border-blue-500 text-blue-400" : "text-gray-400"
           }`}
         >
           🏪 Verkaufsstellen
@@ -404,16 +410,15 @@ export default function AdminPage() {
         <button
           onClick={() => setActiveTab("orders")}
           className={`flex-1 py-3 text-center font-bold text-sm ${
-            activeTab === "orders"
-              ? "border-b-2 border-blue-500 text-blue-400"
-              : "text-gray-400"
+            activeTab === "orders" ? "border-b-2 border-blue-500 text-blue-400" : "text-gray-400"
           }`}
         >
           📊 Bestellungen
         </button>
       </div>
 
-      <div className="p-4 max-w-4xl mx-auto">
+      {/* Content area - only drinks and orders scrollable */}
+      <div className={`flex-1 p-4 max-w-4xl mx-auto w-full ${activeTab !== "salesPoints" ? "overflow-y-auto" : ""}`}>
         {/* DRINKS TAB */}
         {activeTab === "drinks" && (
           <div>
@@ -426,7 +431,6 @@ export default function AdminPage() {
                 + Neues Getränk
               </button>
             </div>
-
             <div className="space-y-2">
               {drinks.map((drink) => (
                 <div
@@ -442,11 +446,8 @@ export default function AdminPage() {
                   <div className="flex-1 min-w-0">
                     <div className="font-bold truncate">{drink.name}</div>
                     <div className="text-xs text-gray-400">
-                      Netto: {drink.priceNet.toFixed(2)} € · {drink.taxRate}%
-                      MwSt. · Brutto: {drink.priceGross.toFixed(2)} €
-                      {drink.hasDeposit
-                        ? ` · Pfand: ${drink.depositAmount.toFixed(2)} €`
-                        : " · Kein Pfand"}
+                      Brutto: {drink.priceGross.toFixed(2)} € · {drink.taxRate}% MwSt.
+                      {drink.hasDeposit ? ` · Pfand: ${drink.depositAmount.toFixed(2)} €` : " · Kein Pfand"}
                     </div>
                   </div>
                   <button
@@ -464,15 +465,13 @@ export default function AdminPage() {
                 </div>
               ))}
               {drinks.length === 0 && (
-                <p className="text-gray-500 text-center py-8">
-                  Noch keine Getränke angelegt.
-                </p>
+                <p className="text-gray-500 text-center py-8">Noch keine Getränke angelegt.</p>
               )}
             </div>
           </div>
         )}
 
-        {/* SALES POINTS TAB */}
+        {/* SALES POINTS TAB - NOT scrollable */}
         {activeTab === "salesPoints" && (
           <div>
             <div className="flex justify-between items-center mb-4">
@@ -483,15 +482,11 @@ export default function AdminPage() {
                   setSpFormError("");
                   setShowSalesPointForm(true);
                 }}
-                disabled={salesPoints.length >= 5}
-                className="px-4 py-2 rounded-xl bg-green-600 hover:bg-green-500 font-bold text-sm disabled:opacity-50 disabled:cursor-not-allowed"
+                className="px-4 py-2 rounded-xl bg-green-600 hover:bg-green-500 font-bold text-sm"
               >
                 + Neue Verkaufsstelle
               </button>
             </div>
-            <p className="text-xs text-gray-400 mb-3">
-              Maximal 5 Verkaufsstellen möglich
-            </p>
 
             <div className="space-y-2">
               {salesPoints.map((sp) => (
@@ -508,6 +503,15 @@ export default function AdminPage() {
                       Sortierung: {sp.sortOrder}
                     </div>
                   </div>
+                  <button
+                    onClick={() => {
+                      setEditingSalesPoint(sp);
+                      setSpEditName(sp.name);
+                    }}
+                    className="px-3 py-1.5 rounded-lg bg-gray-600 hover:bg-gray-500 text-sm"
+                  >
+                    ✏️
+                  </button>
                   <button
                     onClick={() => handleDeleteSalesPoint(sp.id)}
                     className="px-3 py-1.5 rounded-lg bg-red-900/50 hover:bg-red-800/50 text-sm"
@@ -531,22 +535,47 @@ export default function AdminPage() {
             <h2 className="text-lg font-bold mb-4">Bestellübersicht</h2>
 
             {/* Filter */}
-            <div className="mb-4">
-              <label className="block text-xs text-gray-400 mb-1">
-                Nach Verkaufsstelle filtern
-              </label>
-              <select
-                value={orderFilter}
-                onChange={(e) => setOrderFilter(e.target.value)}
-                className="w-full max-w-xs bg-gray-700 text-white text-sm rounded-lg px-3 py-2 border border-gray-600 focus:border-blue-500 focus:outline-none"
-              >
-                <option value="">Alle Verkaufsstellen</option>
-                {salesPoints.map((sp) => (
-                  <option key={sp.id} value={sp.id}>
-                    {sp.name}
-                  </option>
-                ))}
-              </select>
+            <div className="mb-4 flex items-end gap-3">
+              <div className="flex-1">
+                <label className="block text-xs text-gray-400 mb-1">
+                  Nach Verkaufsstelle filtern
+                </label>
+                <select
+                  value={orderFilter}
+                  onChange={(e) => setOrderFilter(e.target.value)}
+                  className="w-full max-w-xs bg-gray-700 text-white text-sm rounded-lg px-3 py-2 border border-gray-600 focus:border-blue-500 focus:outline-none"
+                >
+                  <option value="">Alle Verkaufsstellen</option>
+                  {salesPoints.map((sp) => (
+                    <option key={sp.id} value={sp.id}>
+                      {sp.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              {/* Reset buttons */}
+              <div className="flex gap-2">
+                {orderFilter && (
+                  <button
+                    onClick={() => {
+                      setResetTarget(orderFilter);
+                      setShowResetConfirm(true);
+                    }}
+                    className="px-3 py-2 rounded-xl bg-red-700 hover:bg-red-600 text-sm font-bold border border-red-500/30"
+                  >
+                    🔄 {getSalesPointName(parseInt(orderFilter))} zurücksetzen
+                  </button>
+                )}
+                <button
+                  onClick={() => {
+                    setResetTarget("");
+                    setShowResetConfirm(true);
+                  }}
+                  className="px-3 py-2 rounded-xl bg-red-800 hover:bg-red-700 text-sm font-bold border border-red-500/30"
+                >
+                  🔄 Alle zurücksetzen
+                </button>
+              </div>
             </div>
 
             {/* Totals */}
@@ -580,9 +609,7 @@ export default function AdminPage() {
             {/* Drink summary */}
             {drinkSummary.length > 0 && (
               <div className="mb-6">
-                <h3 className="text-md font-bold mb-2">
-                  Getränke-Zusammenfassung
-                </h3>
+                <h3 className="text-md font-bold mb-2">Getränke-Zusammenfassung</h3>
                 <div className="bg-gray-800 rounded-xl border border-gray-700 overflow-hidden">
                   <table className="w-full text-sm">
                     <thead>
@@ -595,14 +622,9 @@ export default function AdminPage() {
                     </thead>
                     <tbody>
                       {drinkSummary.map((item, i) => (
-                        <tr
-                          key={i}
-                          className="border-t border-gray-700/50"
-                        >
+                        <tr key={i} className="border-t border-gray-700/50">
                           <td className="p-3 font-medium">{item.drinkName}</td>
-                          <td className="p-3 text-right tabular-nums">
-                            {item.totalQuantity}
-                          </td>
+                          <td className="p-3 text-right tabular-nums">{item.totalQuantity}</td>
                           <td className="p-3 text-right tabular-nums text-green-400">
                             {(item.totalGross || 0).toFixed(2)} €
                           </td>
@@ -620,9 +642,7 @@ export default function AdminPage() {
             {/* Recent orders */}
             <h3 className="text-md font-bold mb-2">Einzelbestellungen</h3>
             {orders.length === 0 ? (
-              <p className="text-gray-500 text-center py-8">
-                Noch keine Bestellungen vorhanden.
-              </p>
+              <p className="text-gray-500 text-center py-8">Noch keine Bestellungen vorhanden.</p>
             ) : (
               <div className="space-y-2">
                 {orders.map((order) => (
@@ -631,9 +651,7 @@ export default function AdminPage() {
                     className="bg-gray-800 rounded-xl p-3 border border-gray-700 flex items-center justify-between"
                   >
                     <div>
-                      <div className="font-bold text-sm">
-                        Bestellung #{order.id}
-                      </div>
+                      <div className="font-bold text-sm">Bestellung #{order.id}</div>
                       <div className="text-xs text-gray-400">
                         {new Date(order.createdAt).toLocaleString("de-DE")}
                       </div>
@@ -669,55 +687,40 @@ export default function AdminPage() {
             <h2 className="text-xl font-bold mb-4">
               {editingDrink ? "Getränk bearbeiten" : "Neues Getränk"}
             </h2>
-
             {formError && (
               <div className="bg-red-900/50 text-red-300 text-sm p-3 rounded-lg mb-4 border border-red-700">
                 {formError}
               </div>
             )}
-
             <div className="space-y-4">
               <div>
-                <label className="block text-sm text-gray-400 mb-1">
-                  Name *
-                </label>
+                <label className="block text-sm text-gray-400 mb-1">Name *</label>
                 <input
                   type="text"
                   value={formData.name}
-                  onChange={(e) =>
-                    setFormData({ ...formData, name: e.target.value })
-                  }
+                  onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                   className="w-full px-4 py-2.5 rounded-xl bg-gray-700 text-white border border-gray-600 focus:border-blue-500 focus:outline-none"
                   placeholder="z.B. Pils"
                 />
               </div>
-
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-sm text-gray-400 mb-1">
-                    Nettopreis (€) *
-                  </label>
+                  <label className="block text-sm text-gray-400 mb-1">Nettopreis (€) *</label>
                   <input
                     type="number"
                     step="0.01"
                     min="0"
                     value={formData.priceNet}
-                    onChange={(e) =>
-                      setFormData({ ...formData, priceNet: e.target.value })
-                    }
+                    onChange={(e) => setFormData({ ...formData, priceNet: e.target.value })}
                     className="w-full px-4 py-2.5 rounded-xl bg-gray-700 text-white border border-gray-600 focus:border-blue-500 focus:outline-none"
                     placeholder="2.50"
                   />
                 </div>
                 <div>
-                  <label className="block text-sm text-gray-400 mb-1">
-                    MwSt.-Satz
-                  </label>
+                  <label className="block text-sm text-gray-400 mb-1">MwSt.-Satz</label>
                   <select
                     value={formData.taxRate}
-                    onChange={(e) =>
-                      setFormData({ ...formData, taxRate: e.target.value })
-                    }
+                    onChange={(e) => setFormData({ ...formData, taxRate: e.target.value })}
                     className="w-full px-4 py-2.5 rounded-xl bg-gray-700 text-white border border-gray-600 focus:border-blue-500 focus:outline-none"
                   >
                     <option value="19">19%</option>
@@ -725,97 +728,64 @@ export default function AdminPage() {
                   </select>
                 </div>
               </div>
-
               <div className="flex items-center gap-3">
                 <label className="flex items-center gap-2 cursor-pointer">
                   <input
                     type="checkbox"
                     checked={formData.hasDeposit}
-                    onChange={(e) =>
-                      setFormData({ ...formData, hasDeposit: e.target.checked })
-                    }
+                    onChange={(e) => setFormData({ ...formData, hasDeposit: e.target.checked })}
                     className="w-5 h-5 rounded accent-amber-500"
                   />
-                  <span className="text-sm text-gray-300">
-                    Becherpfand aktivieren
-                  </span>
+                  <span className="text-sm text-gray-300">Becherpfand aktivieren</span>
                 </label>
               </div>
-
               {formData.hasDeposit && (
                 <div>
-                  <label className="block text-sm text-gray-400 mb-1">
-                    Pfandbetrag (€)
-                  </label>
+                  <label className="block text-sm text-gray-400 mb-1">Pfandbetrag (€)</label>
                   <input
                     type="number"
                     step="0.01"
                     min="0"
                     value={formData.depositAmount}
-                    onChange={(e) =>
-                      setFormData({
-                        ...formData,
-                        depositAmount: e.target.value,
-                      })
-                    }
+                    onChange={(e) => setFormData({ ...formData, depositAmount: e.target.value })}
                     className="w-full px-4 py-2.5 rounded-xl bg-gray-700 text-white border border-gray-600 focus:border-blue-500 focus:outline-none"
                   />
                 </div>
               )}
-
               <div>
-                <label className="block text-sm text-gray-400 mb-1">
-                  Button-Farbe
-                </label>
+                <label className="block text-sm text-gray-400 mb-1">Button-Farbe</label>
                 <div className="flex items-center gap-3">
                   <input
                     type="color"
                     value={formData.color}
-                    onChange={(e) =>
-                      setFormData({ ...formData, color: e.target.value })
-                    }
+                    onChange={(e) => setFormData({ ...formData, color: e.target.value })}
                     className="w-12 h-10 rounded-lg border border-gray-600 cursor-pointer"
                   />
-                  <span className="text-sm text-gray-400 font-mono">
-                    {formData.color}
-                  </span>
+                  <span className="text-sm text-gray-400 font-mono">{formData.color}</span>
                 </div>
               </div>
-
               <div>
-                <label className="block text-sm text-gray-400 mb-1">
-                  Bild-URL (optional)
-                </label>
+                <label className="block text-sm text-gray-400 mb-1">Bild-URL (optional)</label>
                 <input
                   type="url"
                   value={formData.imageUrl}
-                  onChange={(e) =>
-                    setFormData({ ...formData, imageUrl: e.target.value })
-                  }
+                  onChange={(e) => setFormData({ ...formData, imageUrl: e.target.value })}
                   className="w-full px-4 py-2.5 rounded-xl bg-gray-700 text-white border border-gray-600 focus:border-blue-500 focus:outline-none"
                   placeholder="https://..."
                 />
               </div>
-
               <div>
-                <label className="block text-sm text-gray-400 mb-1">
-                  Sortierreihenfolge
-                </label>
+                <label className="block text-sm text-gray-400 mb-1">Sortierreihenfolge</label>
                 <input
                   type="number"
                   min="0"
                   value={formData.sortOrder}
-                  onChange={(e) =>
-                    setFormData({ ...formData, sortOrder: e.target.value })
-                  }
+                  onChange={(e) => setFormData({ ...formData, sortOrder: e.target.value })}
                   className="w-full px-4 py-2.5 rounded-xl bg-gray-700 text-white border border-gray-600 focus:border-blue-500 focus:outline-none"
                 />
               </div>
-
               <div>
-                <label className="block text-sm text-gray-400 mb-2">
-                  Vorschau
-                </label>
+                <label className="block text-sm text-gray-400 mb-2">Vorschau</label>
                 <div
                   className="rounded-xl p-4 text-white shadow-lg border border-white/10"
                   style={{
@@ -827,28 +797,21 @@ export default function AdminPage() {
                     backgroundPosition: "center",
                   }}
                 >
-                  <div className="font-bold text-lg">
-                    {formData.name || "Getränkename"}
-                  </div>
+                  <div className="font-bold text-lg">{formData.name || "Getränkename"}</div>
                   <div className="text-2xl font-extrabold mt-1">
                     {formData.priceNet
-                      ? (
-                          parseFloat(formData.priceNet) *
-                          (1 + parseFloat(formData.taxRate) / 100)
-                        ).toFixed(2)
+                      ? (parseFloat(formData.priceNet) * (1 + parseFloat(formData.taxRate) / 100)).toFixed(2)
                       : "0.00"}{" "}
                     €
                   </div>
                   {formData.hasDeposit && (
                     <div className="text-sm opacity-80">
-                      + {parseFloat(formData.depositAmount || "0").toFixed(2)} €
-                      Pfand
+                      + {parseFloat(formData.depositAmount || "0").toFixed(2)} € Pfand
                     </div>
                   )}
                 </div>
               </div>
             </div>
-
             <div className="flex gap-3 mt-6">
               <button
                 type="button"
@@ -908,6 +871,73 @@ export default function AdminPage() {
               </button>
             </div>
           </form>
+        </div>
+      )}
+
+      {/* Edit Sales Point modal */}
+      {editingSalesPoint && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
+          <form
+            onSubmit={handleUpdateSalesPoint}
+            className="bg-gray-800 rounded-2xl p-6 w-full max-w-sm shadow-2xl border border-gray-700"
+          >
+            <h2 className="text-xl font-bold mb-4">Verkaufsstelle bearbeiten</h2>
+            <div className="mb-4">
+              <label className="block text-sm text-gray-400 mb-1">Name</label>
+              <input
+                type="text"
+                value={spEditName}
+                onChange={(e) => setSpEditName(e.target.value)}
+                className="w-full px-4 py-2.5 rounded-xl bg-gray-700 text-white border border-gray-600 focus:border-blue-500 focus:outline-none"
+                autoFocus
+              />
+            </div>
+            <div className="flex gap-3">
+              <button
+                type="button"
+                onClick={() => setEditingSalesPoint(null)}
+                className="flex-1 py-3 rounded-xl font-bold bg-gray-600 hover:bg-gray-500 transition-all"
+              >
+                Abbrechen
+              </button>
+              <button
+                type="submit"
+                className="flex-1 py-3 rounded-xl font-bold bg-blue-600 hover:bg-blue-500 transition-all"
+              >
+                Speichern
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {/* Reset Confirm modal */}
+      {showResetConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
+          <div className="bg-gray-800 rounded-2xl p-6 w-full max-w-sm shadow-2xl border border-gray-700">
+            <h2 className="text-xl font-bold mb-3 text-center text-red-400">
+              ⚠️ Zähler zurücksetzen?
+            </h2>
+            <p className="text-sm text-gray-300 text-center mb-4">
+              {resetTarget
+                ? `Alle Bestellungen für "${getSalesPointName(parseInt(resetTarget))}" werden unwiderruflich gelöscht.`
+                : "ALLE Bestellungen für ALLE Verkaufsstellen werden unwiderruflich gelöscht."}
+            </p>
+            <div className="flex gap-3">
+              <button
+                onClick={() => setShowResetConfirm(false)}
+                className="flex-1 py-3 rounded-xl font-bold bg-gray-600 hover:bg-gray-500 transition-all"
+              >
+                Abbrechen
+              </button>
+              <button
+                onClick={handleResetCounters}
+                className="flex-1 py-3 rounded-xl font-bold bg-red-600 hover:bg-red-500 transition-all"
+              >
+                Ja, löschen
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>
