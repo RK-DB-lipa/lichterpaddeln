@@ -41,7 +41,6 @@ export default function ZapfPage() {
     }
   }, [selectedSalesPointId]);
 
-  // Poll queue every 3 seconds
   useEffect(() => {
     if (!selectedSalesPointId) return;
     const interval = setInterval(fetchQueue, 3000);
@@ -121,7 +120,6 @@ export default function ZapfPage() {
 
   return (
     <div className="h-screen flex flex-col bg-gray-900 text-white overflow-hidden">
-      {/* Header */}
       <header className="flex items-center justify-between px-3 py-2 bg-gray-800 border-b border-gray-700 shrink-0">
         <div className="flex items-center gap-2">
           <span className="text-xl">🍺</span>
@@ -147,16 +145,13 @@ export default function ZapfPage() {
         </div>
       </header>
 
-      {/* Action toast */}
       {lastAction && (
         <div className="shrink-0 bg-green-700 text-white text-center py-1 text-sm font-bold animate-pulse">
           ✅ {lastAction}
         </div>
       )}
 
-      {/* Main tap buttons */}
       <main className="flex-1 flex items-center justify-center p-4 gap-4 md:gap-8">
-        {/* Red pending buttons - left */}
         <div className="flex flex-col gap-4 md:gap-6">
           <div className="text-xs text-red-400 font-bold text-center uppercase tracking-wider mb-1">
             Offen
@@ -178,7 +173,6 @@ export default function ZapfPage() {
           })}
         </div>
 
-        {/* Green complete buttons - right */}
         <div className="flex flex-col gap-4 md:gap-6">
           <div className="text-xs text-green-400 font-bold text-center uppercase tracking-wider mb-1">
             Gezapft
@@ -202,7 +196,6 @@ export default function ZapfPage() {
         </div>
       </main>
 
-      {/* Footer hint */}
       <footer className="shrink-0 bg-gray-800 border-t border-gray-700 px-4 py-2 text-center text-xs text-gray-400">
         Grün tippen = Getränk als gezapft markieren · Rot = noch offen
       </footer>
