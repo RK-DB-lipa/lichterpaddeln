@@ -24,10 +24,13 @@ type StatItem = {
   totalPoured: number;
 };
 
+// Default explicit list of pour drinks
+const DEFAULT_POUR_BUTTONS = ["Bier", "Radler", "Glühwein"];
+
 export default function ZapfPage() {
   const [salesPoints, setSalesPoints] = useState<SalesPoint[]>([]);
   const [selectedSalesPointId, setSelectedSalesPointId] = useState<number | null>(null);
-  const [pourDrinkList, setPourDrinkList] = useState<string[]>([]);
+  const [buttonList, setButtonList] = useState<string[]>(DEFAULT_POUR_BUTTONS);
   const [rawQueue, setRawQueue] = useState<QueueItem[]>([]);
   const [stats, setStats] = useState<Map<string, number>>(new Map());
   const [lastAction, setLastAction] = useState<string | null>(null);
@@ -77,16 +80,28 @@ export default function ZapfPage() {
       const res = await fetch("/api/drinks");
       if (res.ok) {
         const data: Drink[] = await res.json();
-        const pourDrinks = data.filter((d) => d.isPourDrink).map((d) => d.name);
-        if (pourDrinks.length > 0) {
-          setPourDrinkList(pourDrinks);
-        } else {
-          setPourDrinkList(["Bier", "Radler", "Glühwein"]);
-        }
+        const dbPourNames = data.filter((d) => d.isPourDrink).map((d) => d.name);
+        
+        // Build unique button list incorporating Bier, Radler, Glühwein + any custom DB pour drinks
+        const combined = new Set<string>();
+        
+        // Always include separate Bier, Radler, Glühwein
+        combined.add("Bier");
+        combined.add("Radler");
+        combined.add("Glühwein");
+
+        // Add any other pour drinks from DB that aren't combined "Bier/Radler"
+        dbPourNames.forEach((name) => {
+          if (name.toLowerCase() !== "bier/radler") {
+            combined.add(name);
+          }
+        });
+
+        setButtonList(Array.from(combined));
       }
     } catch (err) {
       console.error(err);
-      setPourDrinkList(["Bier", "Radler", "Glühwein"]);
+      setButtonList(["Bier", "Radler", "Glühwein"]);
     }
   }
 
@@ -117,33 +132,41 @@ export default function ZapfPage() {
     }
   }
 
-  // Calculate pending count for a button drink name
-  const getPendingCount = (buttonDrinkName: string) => {
-    const btnLower = buttonDrinkName.toLowerCase();
+  // Calculate pending count for a specific button (e.g. "Bier" or "Radler")
+  const getPendingCount = (buttonName: string) => {
+    const btnLower = buttonName.toLowerCase();
     let count = 0;
     rawQueue.forEach((q) => {
       if (q.pendingCount <= 0) return;
       const qLower = q.drinkName.toLowerCase();
-      // Exact or partial match
-      if (
-        qLower === btnLower ||
-        qLower.includes(btnLower) ||
-        btnLower.includes(qLower)
-      ) {
+
+      // Exact match (e.g. "Bier" == "Bier", "Radler" == "Radler")
+      if (qLower === btnLower) {
+        count += q.pendingCount;
+      } 
+      // If queue item is "Bier/Radler", split or count for both Bier and Radler
+      else if (qLower.includes("bier/radler") || qLower.includes("bier / radler")) {
+        if (btnLower === "bier" || btnLower === "radler") {
+          count += q.pendingCount;
+        }
+      }
+      // General partial match
+      else if (qLower.includes(btnLower) || btnLower.includes(qLower)) {
         count += q.pendingCount;
       }
     });
     return count;
   };
 
-  // Calculate total poured count for a button drink name
-  const getPouredCount = (buttonDrinkName: string) => {
-    const btnLower = buttonDrinkName.toLowerCase();
+  // Calculate total poured count for a button
+  const getPouredCount = (buttonName: string) => {
+    const btnLower = buttonName.toLowerCase();
     let total = 0;
     stats.forEach((poured, name) => {
       const nLower = name.toLowerCase();
       if (
         nLower === btnLower ||
+        (nLower.includes("bier/radler") && (btnLower === "bier" || btnLower === "radler")) ||
         nLower.includes(btnLower) ||
         btnLower.includes(nLower)
       ) {
@@ -162,10 +185,13 @@ export default function ZapfPage() {
         prev.map((q) => {
           const qLower = q.drinkName.toLowerCase();
           const dLower = drinkName.toLowerCase();
-          if (
-            (qLower === dLower || qLower.includes(dLower) || dLower.includes(qLower)) &&
-            q.pendingCount > 0
-          ) {
+          const matches =
+            qLower === dLower ||
+            (qLower.includes("bier/radler") && (dLower === "bier" || dLower === "radler")) ||
+            qLower.includes(dLower) ||
+            dLower.includes(qLower);
+
+          if (matches && q.pendingCount > 0) {
             return { ...q, pendingCount: q.pendingCount - 1 };
           }
           return q;
@@ -184,11 +210,10 @@ export default function ZapfPage() {
 
         if (res.ok) {
           setLastAction(`${drinkName} gezapft`);
-          setTimeout(() => setLastAction(null), 1500);
+          setTimeout(() => setLastAction(null), 1200);
           fetchQueue();
           fetchStats();
         } else {
-          // Revert on error
           fetchQueue();
         }
       } catch (err) {
@@ -200,7 +225,6 @@ export default function ZapfPage() {
   );
 
   const selectedSalesPoint = salesPoints.find((sp) => sp.id === selectedSalesPointId);
-  const displayButtons = pourDrinkList.length > 0 ? pourDrinkList : ["Bier", "Radler", "Glühwein"];
 
   return (
     <div className="h-screen flex flex-col bg-gray-900 text-white overflow-hidden select-none">
@@ -232,56 +256,56 @@ export default function ZapfPage() {
 
       {/* Action toast */}
       {lastAction && (
-        <div className="shrink-0 bg-green-700 text-white text-center py-1 text-sm font-bold animate-pulse">
+        <div className="shrink-0 bg-green-700 text-white text-center py-1 text-xs md:text-sm font-bold animate-pulse">
           ✅ {lastAction}
         </div>
       )}
 
-      {/* Main tap buttons */}
-      <main className="flex-1 flex items-center justify-center p-4 gap-4 md:gap-8 overflow-y-auto">
+      {/* Main tap buttons grid - 4 separate rows/buttons for Bier, Radler, Glühwein, etc */}
+      <main className="flex-1 flex items-center justify-center p-3 gap-3 md:gap-6 overflow-y-auto">
         {/* Red pending buttons - left */}
-        <div className="flex flex-col gap-3 md:gap-5">
-          <div className="text-xs text-red-400 font-bold text-center uppercase tracking-wider mb-1">
+        <div className="flex flex-col gap-2.5 md:gap-4">
+          <div className="text-xs text-red-400 font-bold text-center uppercase tracking-wider mb-0.5">
             Offen
           </div>
-          {displayButtons.map((drink) => {
+          {buttonList.map((drink) => {
             const count = getPendingCount(drink);
             return (
               <div
                 key={`red-${drink}`}
-                className={`w-28 h-28 md:w-40 md:h-40 rounded-2xl flex flex-col items-center justify-center
-                  border-4 shadow-xl transition-all p-2 text-center
-                  ${count > 0 ? "bg-red-600 border-red-400 animate-pulse" : "bg-red-900/40 border-red-800/60"}
+                className={`w-24 h-24 md:w-36 md:h-36 rounded-2xl flex flex-col items-center justify-center
+                  border-3 md:border-4 shadow-xl transition-all p-1.5 text-center
+                  ${count > 0 ? "bg-red-600 border-red-400 animate-pulse scale-105" : "bg-red-900/40 border-red-800/60 opacity-80"}
                 `}
               >
-                <span className="text-xs md:text-sm font-bold opacity-90 truncate w-full leading-tight">{drink}</span>
-                <span className="text-4xl md:text-6xl font-extrabold mt-1">{count}</span>
+                <span className="text-xs md:text-sm font-extrabold truncate w-full leading-tight">{drink}</span>
+                <span className="text-3xl md:text-5xl font-black mt-0.5">{count}</span>
               </div>
             );
           })}
         </div>
 
         {/* Green complete buttons - right */}
-        <div className="flex flex-col gap-3 md:gap-5">
-          <div className="text-xs text-green-400 font-bold text-center uppercase tracking-wider mb-1">
+        <div className="flex flex-col gap-2.5 md:gap-4">
+          <div className="text-xs text-green-400 font-bold text-center uppercase tracking-wider mb-0.5">
             Gezapft
           </div>
-          {displayButtons.map((drink) => {
+          {buttonList.map((drink) => {
             const count = getPouredCount(drink);
             const pending = getPendingCount(drink);
             return (
               <button
                 key={`green-${drink}`}
                 onClick={() => handleComplete(drink)}
-                className={`w-28 h-28 md:w-40 md:h-40 rounded-2xl flex flex-col items-center justify-center
+                className={`w-24 h-24 md:w-36 md:h-36 rounded-2xl flex flex-col items-center justify-center
                   bg-green-600 hover:bg-green-500 active:bg-green-700 active:scale-95
-                  border-4 border-green-400 shadow-xl transition-all p-2 text-center
-                  ${pending === 0 ? "opacity-75 hover:opacity-100" : ""}
+                  border-3 md:border-4 border-green-400 shadow-xl transition-all p-1.5 text-center
+                  ${pending === 0 ? "opacity-75 hover:opacity-100" : "ring-2 ring-green-300"}
                 `}
               >
-                <span className="text-xs md:text-sm font-bold opacity-90 truncate w-full leading-tight">{drink}</span>
-                <span className="text-4xl md:text-6xl font-extrabold mt-1">{count}</span>
-                <span className="text-[10px] opacity-75 mt-0.5">Tippen = -1 Offen</span>
+                <span className="text-xs md:text-sm font-extrabold truncate w-full leading-tight">{drink}</span>
+                <span className="text-3xl md:text-5xl font-black mt-0.5">{count}</span>
+                <span className="text-[9px] md:text-[10px] opacity-80">Tippen zum Abhaken</span>
               </button>
             );
           })}
@@ -289,8 +313,8 @@ export default function ZapfPage() {
       </main>
 
       {/* Footer hint */}
-      <footer className="shrink-0 bg-gray-800 border-t border-gray-700 px-4 py-2 text-center text-xs text-gray-400">
-        Grün tippen = 1 gezapft markieren (Reduziert Rot) · Synchronisiert jede Sekunde
+      <footer className="shrink-0 bg-gray-800 border-t border-gray-700 px-3 py-1.5 text-center text-[11px] text-gray-400">
+        Bier, Radler, Glühwein getrennt · Grün tippen = 1 gezapft markieren
       </footer>
     </div>
   );
