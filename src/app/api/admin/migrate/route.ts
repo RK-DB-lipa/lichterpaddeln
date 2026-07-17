@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { pool } from "@/db";
 
-const CREATE_TABLES_SQL = `
+const MIGRATION_SQL = `
 CREATE TABLE IF NOT EXISTS "admins" (
   "id" serial PRIMARY KEY,
   "username" varchar(100) NOT NULL UNIQUE,
@@ -27,9 +27,13 @@ CREATE TABLE IF NOT EXISTS "drinks" (
   "color" varchar(30) DEFAULT '#3B82F6' NOT NULL,
   "image_url" text,
   "is_active" boolean DEFAULT true NOT NULL,
+  "is_pour_drink" boolean DEFAULT false NOT NULL,
   "sort_order" integer DEFAULT 0 NOT NULL,
   "created_at" timestamp DEFAULT now() NOT NULL
 );
+
+-- Ensure column exists if table was created previously
+ALTER TABLE "drinks" ADD COLUMN IF NOT EXISTS "is_pour_drink" boolean DEFAULT false NOT NULL;
 
 CREATE TABLE IF NOT EXISTS "orders" (
   "id" serial PRIMARY KEY,
@@ -52,15 +56,29 @@ CREATE TABLE IF NOT EXISTS "order_items" (
   "total_price_gross" real NOT NULL,
   "total_deposit" real NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS "pour_queue" (
+  "id" serial PRIMARY KEY,
+  "sales_point_id" integer NOT NULL,
+  "drink_name" varchar(200) NOT NULL,
+  "pending_count" integer DEFAULT 0 NOT NULL,
+  "created_at" timestamp DEFAULT now() NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS "pour_stats" (
+  "id" serial PRIMARY KEY,
+  "drink_name" varchar(200) NOT NULL UNIQUE,
+  "total_poured" integer DEFAULT 0 NOT NULL,
+  "created_at" timestamp DEFAULT now() NOT NULL
+);
 `;
 
 export async function GET() {
   try {
-    await pool.query(CREATE_TABLES_SQL);
+    await pool.query(MIGRATION_SQL);
     return NextResponse.json({
       success: true,
-      message: "Tabellen erfolgreich erstellt",
-      nextStep: "Rufe jetzt /api/admin/setup auf, um Admin und Standard-Daten anzulegen",
+      message: "Datenbank-Tabellen und Spalten erfolgreich aktualisiert! (Spalte is_pour_drink und Zapf-Tabellen hinzugefügt)",
     });
   } catch (error: any) {
     console.error("Migration error:", error);
