@@ -84,13 +84,13 @@ export async function POST(req: NextRequest) {
     );
 
     const defaultDrinks = [
-      { name: "Pils", priceNet: 2.5, taxRate: 19, color: "#F59E0B", cupSize: "04", sortOrder: 1 },
-      { name: "Weizen", priceNet: 2.8, taxRate: 19, color: "#EAB308", cupSize: "04", sortOrder: 2 },
-      { name: "Cola", priceNet: 2.0, taxRate: 19, color: "#DC2626", cupSize: "02", sortOrder: 3 },
-      { name: "Fanta", priceNet: 2.0, taxRate: 19, color: "#F97316", cupSize: "02", sortOrder: 4 },
-      { name: "Wasser", priceNet: 1.5, taxRate: 19, color: "#3B82F6", cupSize: "02", sortOrder: 5 },
-      { name: "Schorle", priceNet: 2.0, taxRate: 7, color: "#10B981", cupSize: "02", sortOrder: 6 },
-      { name: "Kaffee", priceNet: 1.8, taxRate: 7, color: "#78350F", cupSize: "02", sortOrder: 7 },
+      { name: "Pils", priceGross: 2.98, taxRate: 19, color: "#F59E0B", cupSize: "04", sortOrder: 1 },
+      { name: "Weizen", priceGross: 3.33, taxRate: 19, color: "#EAB308", cupSize: "04", sortOrder: 2 },
+      { name: "Cola", priceGross: 2.38, taxRate: 19, color: "#DC2626", cupSize: "02", sortOrder: 3 },
+      { name: "Fanta", priceGross: 2.38, taxRate: 19, color: "#F97316", cupSize: "02", sortOrder: 4 },
+      { name: "Wasser", priceGross: 1.79, taxRate: 19, color: "#3B82F6", cupSize: "02", sortOrder: 5 },
+      { name: "Schorle", priceGross: 2.14, taxRate: 7, color: "#10B981", cupSize: "02", sortOrder: 6 },
+      { name: "Kaffee", priceGross: 1.93, taxRate: 7, color: "#78350F", cupSize: "02", sortOrder: 7 },
     ];
     await db.insert(drinks).values(
       defaultDrinks.map((d) => ({

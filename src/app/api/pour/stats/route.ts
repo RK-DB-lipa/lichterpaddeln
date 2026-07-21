@@ -1,19 +1,33 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
 import { pourStats } from "@/db/schema";
 import { getSession } from "@/lib/auth";
-import { eq, desc } from "drizzle-orm";
+import { eq, desc, and, sql } from "drizzle-orm";
 
-export async function GET() {
+export async function GET(req: NextRequest) {
   try {
     const session = await getSession();
     const tenantId = session?.tenantId ?? 0;
+    const url = new URL(req.url);
+    const salesPointId = url.searchParams.get("salesPointId");
+    const pourerName = url.searchParams.get("pourerName");
 
+    const conditions = [eq(pourStats.tenantId, tenantId)];
+    if (salesPointId) conditions.push(eq(pourStats.salesPointId, parseInt(salesPointId)));
+    if (pourerName) conditions.push(eq(pourStats.pourerName, pourerName));
+
+    const where = and(...conditions);
+
+    // Aggregate by drink for the chart display
     const stats = await db
-      .select()
+      .select({
+        drinkName: pourStats.drinkName,
+        totalPoured: sql`sum(${pourStats.totalPoured})`,
+      })
       .from(pourStats)
-      .where(eq(pourStats.tenantId, tenantId))
-      .orderBy(desc(pourStats.totalPoured));
+      .where(where)
+      .groupBy(pourStats.drinkName)
+      .orderBy(desc(sql`sum(${pourStats.totalPoured})`));
 
     return NextResponse.json(stats);
   } catch (error) {
