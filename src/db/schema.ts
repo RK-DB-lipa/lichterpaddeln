@@ -67,6 +67,7 @@ export const orders = pgTable("orders", {
   totalDeposit: real("total_deposit").notNull(),
   totalDepositReturned: real("total_deposit_returned").notNull(),
   netDeposit: real("net_deposit").notNull(),
+  cashierName: varchar("cashier_name", { length: 200 }).default(""),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
