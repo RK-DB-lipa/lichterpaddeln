@@ -1,16 +1,5 @@
-import {
-  pgTable,
-  serial,
-  text,
-  integer,
-  boolean,
-  timestamp,
-  real,
-  varchar,
-  uniqueIndex,
-} from "drizzle-orm/pg-core";
+import { pgTable, serial, text, integer, boolean, timestamp, real, varchar, uniqueIndex, primaryKey } from "drizzle-orm/pg-core";
 
-// Super admins (app owner). Super admin data lives in tenant 0.
 export const admins = pgTable("admins", {
   id: serial("id").primaryKey(),
   username: varchar("username", { length: 100 }).notNull().unique(),
@@ -18,7 +7,6 @@ export const admins = pgTable("admins", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
-// Licensed users (tenants) created by the super admin
 export const managedUsers = pgTable("managed_users", {
   id: serial("id").primaryKey(),
   username: varchar("username", { length: 100 }).notNull().unique(),
@@ -28,7 +16,6 @@ export const managedUsers = pgTable("managed_users", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
-// Sales points (unlimited) – tenantId 0 = super admin namespace
 export const salesPoints = pgTable("sales_points", {
   id: serial("id").primaryKey(),
   tenantId: integer("tenant_id").notNull().default(0),
@@ -38,12 +25,11 @@ export const salesPoints = pgTable("sales_points", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
-// Drinks configuration
 export const drinks = pgTable("drinks", {
   id: serial("id").primaryKey(),
   tenantId: integer("tenant_id").notNull().default(0),
   name: varchar("name", { length: 200 }).notNull(),
-  priceNet: real("price_net").notNull(),
+  priceGross: real("price_gross").notNull(),
   taxRate: real("tax_rate").notNull().default(19),
   hasDeposit: boolean("has_deposit").notNull().default(true),
   depositAmount: real("deposit_amount").notNull().default(2.0),
@@ -56,13 +42,18 @@ export const drinks = pgTable("drinks", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
-// Completed orders
+// Junction table: which drinks are available at which sales points
+export const drinkSalesPoints = pgTable("drink_sales_points", {
+  drinkId: integer("drink_id").notNull().references(() => drinks.id),
+  salesPointId: integer("sales_point_id").notNull().references(() => salesPoints.id),
+}, (t) => ({
+  pk: primaryKey({ columns: [t.drinkId, t.salesPointId] }),
+}));
+
 export const orders = pgTable("orders", {
   id: serial("id").primaryKey(),
   tenantId: integer("tenant_id").notNull().default(0),
-  salesPointId: integer("sales_point_id")
-    .notNull()
-    .references(() => salesPoints.id),
+  salesPointId: integer("sales_point_id").notNull().references(() => salesPoints.id),
   totalGross: real("total_gross").notNull(),
   totalDeposit: real("total_deposit").notNull(),
   totalDepositReturned: real("total_deposit_returned").notNull(),
@@ -71,15 +62,10 @@ export const orders = pgTable("orders", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
-// Individual items within an order (scoped via orders.tenantId)
 export const orderItems = pgTable("order_items", {
   id: serial("id").primaryKey(),
-  orderId: integer("order_id")
-    .notNull()
-    .references(() => orders.id),
-  drinkId: integer("drink_id")
-    .notNull()
-    .references(() => drinks.id),
+  orderId: integer("order_id").notNull().references(() => orders.id),
+  drinkId: integer("drink_id").notNull().references(() => drinks.id),
   drinkName: varchar("drink_name", { length: 200 }).notNull(),
   quantity: integer("quantity").notNull(),
   unitPriceGross: real("unit_price_gross").notNull(),
@@ -88,7 +74,6 @@ export const orderItems = pgTable("order_items", {
   totalDeposit: real("total_deposit").notNull(),
 });
 
-// Pour queue: pending drinks to pour per sales point
 export const pourQueue = pgTable("pour_queue", {
   id: serial("id").primaryKey(),
   tenantId: integer("tenant_id").notNull().default(0),
@@ -98,34 +83,23 @@ export const pourQueue = pgTable("pour_queue", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
-// Pour stats: total poured drinks (per tenant)
 export const pourStats = pgTable("pour_stats", {
   id: serial("id").primaryKey(),
   tenantId: integer("tenant_id").notNull().default(0),
+  salesPointId: integer("sales_point_id").notNull().default(0),
   drinkName: varchar("drink_name", { length: 200 }).notNull(),
+  pourerName: varchar("pourer_name", { length: 200 }).default(""),
   totalPoured: integer("total_poured").notNull().default(0),
   createdAt: timestamp("created_at").defaultNow().notNull(),
-}, (t) => [
-  uniqueIndex("pour_stats_tenant_drink_unique").on(t.tenantId, t.drinkName),
-]);
+});
 
-// Cup counters: deposit cups out / back, per sales point & size
 export const cupCounters = pgTable("cup_counters", {
   id: serial("id").primaryKey(),
   tenantId: integer("tenant_id").notNull().default(0),
   salesPointId: integer("sales_point_id").notNull(),
-  size: varchar("size", { length: 10 }).notNull(), // "02" | "04"
+  size: varchar("size", { length: 10 }).notNull(),
   given: integer("given").notNull().default(0),
-  returned: integer("returned").notNull().default(0),
   createdAt: timestamp("created_at").defaultNow().notNull(),
-}, (t) => [
-  uniqueIndex("cup_counters_unique").on(t.tenantId, t.salesPointId, t.size),
-]);
+});
 
-export type DrinkSummary = {
-  drinkId: number;
-  drinkName: string;
-  totalQuantity: number;
-  totalGross: number;
-  totalDeposit: number;
-};
+export type DrinkSummary = { drinkId: number; drinkName: string; totalQuantity: number; totalGross: number; totalDeposit: number; };
