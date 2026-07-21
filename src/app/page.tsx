@@ -3,41 +3,26 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 
 type Drink = {
-  id: number;
-  name: string;
-  priceNet: number;
-  taxRate: number;
-  hasDeposit: boolean;
-  depositAmount: number;
-  cupSize: string;
-  color: string;
-  imageUrl: string | null;
-  priceGross: number;
-  isPourDrink: boolean;
+  id: number; name: string; priceNet: number; taxRate: number;
+  hasDeposit: boolean; depositAmount: number; cupSize: string;
+  color: string; imageUrl: string | null; priceGross: number; isPourDrink: boolean;
 };
-
 type SalesPoint = { id: number; name: string };
-
-type OrderItem = {
-  drinkId: number;
-  drinkName: string;
-  quantity: number;
-  unitPriceGross: number;
-  unitDeposit: number;
-};
-
+type OrderItem = { drinkId: number; drinkName: string; quantity: number; unitPriceGross: number; unitDeposit: number };
 type HandoutState = {
-  orderId: number;
-  salesPointName: string;
+  orderId: number; salesPointName: string;
   items: Array<OrderItem & { isPourDrink: boolean }>;
-  checked: Record<number, boolean>;
-  totalGross: number;
-  depositReturnedCount: number;
+  checked: Record<number, boolean>; totalGross: number; depositReturnedCount: number;
 };
 
 const DEPOSIT_PER_RETURN = 2.0;
 
 export default function POSPage() {
+  const [session, setSession] = useState<{ authenticated: boolean; username?: string; role?: string } | null | undefined>(undefined);
+  const [loginUsername, setLoginUsername] = useState("");
+  const [loginPassword, setLoginPassword] = useState("");
+  const [loginError, setLoginError] = useState("");
+
   const [drinks, setDrinks] = useState<Drink[]>([]);
   const [salesPoints, setSalesPoints] = useState<SalesPoint[]>([]);
   const [selectedSalesPointId, setSelectedSalesPointId] = useState<number | null>(null);
@@ -62,6 +47,34 @@ export default function POSPage() {
   const wakeLockRef = useRef<any>(null);
 
   useEffect(() => {
+    checkAuth();
+  }, []);
+
+  async function checkAuth() {
+    try { const res = await fetch("/api/auth/me"); setSession(res.ok ? await res.json() : null); }
+    catch { setSession(null); }
+  }
+
+  async function handleLogin(e: React.FormEvent) {
+    e.preventDefault(); setLoginError("");
+    try {
+      const res = await fetch("/api/auth/login", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ username: loginUsername, password: loginPassword }),
+      });
+      if (res.ok) { setSession({ authenticated: true, username: loginUsername, role: "user" }); setLoginUsername(""); setLoginPassword(""); window.location.reload(); }
+      else { const d = await res.json(); setLoginError(d.error || "Anmeldung fehlgeschlagen"); }
+    } catch { setLoginError("Verbindungsfehler"); }
+  }
+
+  async function handleLogout() {
+    await fetch("/api/auth/logout", { method: "POST" });
+    setSession(null);
+    window.location.reload();
+  }
+
+  // Wake Lock
+  useEffect(() => {
     async function requestWakeLock() {
       try {
         if ("wakeLock" in navigator) {
@@ -73,10 +86,7 @@ export default function POSPage() {
     requestWakeLock();
     const handleVisibility = () => { if (document.visibilityState === "visible") requestWakeLock(); };
     document.addEventListener("visibilitychange", handleVisibility);
-    return () => {
-      document.removeEventListener("visibilitychange", handleVisibility);
-      wakeLockRef.current?.release?.()?.catch?.(() => {});
-    };
+    return () => { document.removeEventListener("visibilitychange", handleVisibility); wakeLockRef.current?.release?.()?.catch?.(() => {}); };
   }, []);
 
   useEffect(() => {
@@ -85,35 +95,27 @@ export default function POSPage() {
   }, []);
 
   useEffect(() => {
-    if (selectedSalesPointId !== null) {
-      localStorage.setItem("selectedSalesPointId", selectedSalesPointId.toString());
-    }
+    if (selectedSalesPointId !== null) localStorage.setItem("selectedSalesPointId", selectedSalesPointId.toString());
   }, [selectedSalesPointId]);
 
   useEffect(() => {
-    fetch("/api/admin/setup", { method: "POST" }).then(() => {
-      fetchDrinks();
-      fetchSalesPoints();
-    });
+    fetch("/api/admin/setup", { method: "POST" }).then(() => { fetchDrinks(); fetchSalesPoints(); });
   }, []);
 
   async function fetchDrinks() {
-    try { const res = await fetch("/api/drinks"); if (res.ok) setDrinks(await res.json()); }
-    catch (err) { console.error(err); }
+    try { const res = await fetch("/api/drinks"); if (res.ok) setDrinks(await res.json()); } catch (err) { console.error(err); }
   }
   async function fetchSalesPoints() {
-    try {
-      const res = await fetch("/api/sales-points");
-      if (res.ok) { const data = await res.json(); setSalesPoints(data); if (data.length > 0 && selectedSalesPointId === null) setSelectedSalesPointId(data[0].id); }
-    } catch (err) { console.error(err); }
+    try { const res = await fetch("/api/sales-points"); if (res.ok) { const d = await res.json(); setSalesPoints(d); if (d.length > 0 && selectedSalesPointId === null) setSelectedSalesPointId(d[0].id); } }
+    catch (err) { console.error(err); }
   }
 
   const addDrink = useCallback((drink: Drink) => {
     setPourSent(false);
     setOrderItems((prev) => {
       const next = new Map(prev);
-      const existing = next.get(drink.id);
-      if (existing) next.set(drink.id, { ...existing, quantity: existing.quantity + 1 });
+      const ex = next.get(drink.id);
+      if (ex) next.set(drink.id, { ...ex, quantity: ex.quantity + 1 });
       else next.set(drink.id, { drinkId: drink.id, drinkName: drink.name, quantity: 1, unitPriceGross: drink.priceGross, unitDeposit: drink.hasDeposit ? drink.depositAmount : 0 });
       return next;
     });
@@ -123,22 +125,16 @@ export default function POSPage() {
     if (selectedSalesPointId) {
       await fetch("/api/cups/return", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ salesPointId: selectedSalesPointId, size, count }) }).catch(() => {});
     }
-    if (size === "02") setDepositReturned02((prev) => prev + count);
-    else setDepositReturned04((prev) => prev + count);
+    if (size === "02") setDepositReturned02((p) => p + count);
+    else setDepositReturned04((p) => p + count);
   }, [selectedSalesPointId]);
 
-  const removeItem = useCallback((drinkId: number) => {
-    setOrderItems((prev) => { const next = new Map(prev); next.delete(drinkId); return next; });
-  }, []);
-
+  const removeItem = useCallback((drinkId: number) => { setOrderItems((prev) => { const n = new Map(prev); n.delete(drinkId); return n; }); }, []);
   const updateItemQuantity = useCallback((drinkId: number, newQty: number) => {
     if (newQty < 1) { removeItem(drinkId); return; }
-    setOrderItems((prev) => { const next = new Map(prev); const ex = next.get(drinkId); if (ex) next.set(drinkId, { ...ex, quantity: newQty }); return next; });
+    setOrderItems((prev) => { const n = new Map(prev); const ex = n.get(drinkId); if (ex) n.set(drinkId, { ...ex, quantity: newQty }); return n; });
   }, [removeItem]);
-
-  const cancelOrder = useCallback(() => {
-    setOrderItems(new Map()); setDepositReturned02(0); setDepositReturned04(0); setPourSent(false); setShowCancelConfirm(false);
-  }, []);
+  const cancelOrder = useCallback(() => { setOrderItems(new Map()); setDepositReturned02(0); setDepositReturned04(0); setPourSent(false); setShowCancelConfirm(false); }, []);
 
   const items = Array.from(orderItems.values());
   const totalDrinkGross = items.reduce((s, i) => s + i.unitPriceGross * i.quantity, 0);
@@ -157,8 +153,7 @@ export default function POSPage() {
     if (!selectedSalesPointId || pourSent) return;
     const pourItems = items.filter((i) => drinks.find((d) => d.id === i.drinkId)?.isPourDrink).map((i) => ({ drinkName: i.drinkName, quantity: i.quantity }));
     if (pourItems.length === 0) return;
-    try { const res = await fetch("/api/pour/queue", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ salesPointId: selectedSalesPointId, items: pourItems }) }); if (res.ok) setPourSent(true); }
-    catch (err) { console.error(err); }
+    try { const res = await fetch("/api/pour/queue", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ salesPointId: selectedSalesPointId, items: pourItems }) }); if (res.ok) setPourSent(true); } catch (err) { console.error(err); }
   }, [items, drinks, selectedSalesPointId, pourSent]);
 
   const handleReset = useCallback(async () => {
@@ -169,11 +164,10 @@ export default function POSPage() {
         if (res.ok) {
           const data = await res.json();
           setLastOrder({ orderId: data.orderId, totalGross: grandTotal });
-          setShowSuccess(true);
-          setTimeout(() => setShowSuccess(false), 3000);
+          setShowSuccess(true); setTimeout(() => setShowSuccess(false), 3000);
           setHandout({ orderId: data.orderId, salesPointName: selectedSalesPoint?.name || "", items: items.map((i) => ({ ...i, isPourDrink: drinks.find((d) => d.id === i.drinkId)?.isPourDrink ?? false })), checked: {}, totalGross: grandTotal, depositReturnedCount: depositReturned });
         }
-      } catch (err) { console.error("Failed to save order:", err); }
+      } catch (err) { console.error(err); }
     }
     setOrderItems(new Map()); setDepositReturned02(0); setDepositReturned04(0); setPourSent(false); setShowResetConfirm(false);
   }, [items, depositReturned, grandTotal, selectedSalesPointId, selectedSalesPoint, drinks]);
@@ -185,16 +179,13 @@ export default function POSPage() {
     const r = receiptRef.current.getBoundingClientRect();
     dragOffset.current = { x: cx - r.left, y: cy - r.top };
   };
-
   const handleDragMove = useCallback((e: MouseEvent | TouchEvent) => {
     if (!isDragging) return;
     const cx = "touches" in e ? e.touches[0].clientX : e.clientX;
     const cy = "touches" in e ? e.touches[0].clientY : e.clientY;
     setReceiptPos({ x: cx - dragOffset.current.x, y: cy - dragOffset.current.y });
   }, [isDragging]);
-
   const handleDragEnd = useCallback(() => setIsDragging(false), []);
-
   useEffect(() => {
     if (isDragging) {
       window.addEventListener("mousemove", handleDragMove); window.addEventListener("mouseup", handleDragEnd);
@@ -206,6 +197,29 @@ export default function POSPage() {
   const handoutCheckedCount = handout ? handout.items.filter((i) => handout.checked[i.drinkId]).length : 0;
   const handoutAllDone = handout !== null && handoutCheckedCount === handout.items.length;
 
+  // Login screen
+  if (session === undefined) {
+    return <div className="h-screen bg-gray-900 flex items-center justify-center text-white"><p>Laden...</p></div>;
+  }
+
+  if (session === null) {
+    return (
+      <div className="h-screen bg-gray-900 flex items-center justify-center p-4">
+        <form onSubmit={handleLogin} className="bg-gray-800 rounded-2xl p-6 w-full max-w-sm shadow-2xl border border-gray-700">
+          <h1 className="text-2xl font-bold text-white mb-6 text-center">🍺 Kasse – Anmeldung</h1>
+          {loginError && <div className="bg-red-900/50 text-red-300 text-sm p-3 rounded-lg mb-4 border border-red-700">{loginError}</div>}
+          <div className="space-y-4">
+            <div><label className="block text-sm text-gray-400 mb-1">Benutzername</label>
+              <input type="text" value={loginUsername} onChange={(e) => setLoginUsername(e.target.value)} className="w-full px-4 py-3 rounded-xl bg-gray-700 text-white border border-gray-600 focus:border-blue-500 focus:outline-none" autoFocus /></div>
+            <div><label className="block text-sm text-gray-400 mb-1">Passwort</label>
+              <input type="password" value={loginPassword} onChange={(e) => setLoginPassword(e.target.value)} className="w-full px-4 py-3 rounded-xl bg-gray-700 text-white border border-gray-600 focus:border-blue-500 focus:outline-none" /></div>
+            <button type="submit" className="w-full py-3 rounded-xl font-bold bg-blue-600 hover:bg-blue-500 transition-all">Anmelden</button>
+          </div>
+        </form>
+      </div>
+    );
+  }
+
   return (
     <div className="h-screen flex flex-col bg-gray-900 text-white overflow-hidden">
       <header className="flex items-center justify-between px-3 py-1.5 bg-gray-800 border-b border-gray-700 shrink-0 z-20">
@@ -214,16 +228,18 @@ export default function POSPage() {
           <span className="font-bold text-sm md:text-base truncate">{selectedSalesPoint?.name || "Getränkewagen"}</span>
         </div>
         <div className="flex items-center gap-2">
+          <span className="text-[10px] bg-gray-700 rounded px-1.5 py-0.5 text-gray-300 truncate hidden sm:inline">👤 {session.username}</span>
           <a href="/zapf" className="text-xs bg-gray-700 hover:bg-gray-600 rounded-lg px-2 py-1 border border-gray-600 font-bold transition-colors">🍺 Zapf</a>
           <select value={selectedSalesPointId ?? ""} onChange={(e) => setSelectedSalesPointId(parseInt(e.target.value))} className="bg-gray-700 text-white text-xs md:text-sm rounded-lg px-2 py-1 border border-gray-600 focus:border-blue-500 focus:outline-none">
             {salesPoints.map((sp) => (<option key={sp.id} value={sp.id}>{sp.name}</option>))}
           </select>
           {grandTotal > 0 && <span className="text-base md:text-lg font-bold text-green-400 tabular-nums">{grandTotal.toFixed(2)} €</span>}
+          <button onClick={handleLogout} className="text-[10px] text-red-400 hover:text-red-300 ml-0.5" title="Abmelden">🚪</button>
         </div>
       </header>
 
+      {/* … ab hier bleibt der gesamte bisherige Inhalt identisch – nur ausgehend von session !== null … */}
       <div className="flex flex-1 overflow-hidden relative" style={{ minHeight: 0 }}>
-        {/* Sidebar */}
         <aside className="w-14 md:w-16 shrink-0 bg-gray-800/90 border-r border-gray-700 flex flex-col items-center py-1.5 gap-1 overflow-y-auto z-30">
           <div className="text-[9px] text-gray-400 font-bold text-center mb-0.5 leading-tight">Pfand<br/>zurück</div>
           <div className="text-[9px] text-amber-400 font-extrabold text-center leading-tight">0,2 l</div>
@@ -240,11 +256,9 @@ export default function POSPage() {
             </button>
           ))}
           {hasItems && (<><div className="w-full border-t border-gray-600 my-1" />
-            <button onClick={() => setShowCancelConfirm(true)} className="w-10 h-10 md:w-11 md:h-11 rounded-lg font-bold text-[10px] bg-red-700 hover:bg-red-600 active:bg-red-800 active:scale-95 transition-all shadow-md flex items-center justify-center leading-tight z-50" title="Bestellung abbrechen">✕<br/>Abbr.</button>
+            <button onClick={() => setShowCancelConfirm(true)} className="w-10 h-10 md:w-11 md:h-11 rounded-lg font-bold text-[10px] bg-red-700 hover:bg-red-600 active:bg-red-800 active:scale-95 transition-all shadow-md flex items-center justify-center leading-tight z-50">✕<br/>Abbr.</button>
           </>)}
         </aside>
-
-        {/* Drink grid */}
         <main className="flex-1 overflow-y-auto p-1.5 md:p-2 relative">
           {drinks.length === 0 ? (
             <div className="flex items-center justify-center h-full text-gray-500"><div className="text-center"><p className="text-lg mb-2">Keine Getränke verfügbar</p><a href="/admin" className="text-blue-400 underline text-sm">Im Admin-Bereich konfigurieren</a></div></div>
@@ -265,7 +279,6 @@ export default function POSPage() {
           )}
         </main>
 
-        {/* Receipt */}
         {hasItems && (
           <div ref={receiptRef} className={`absolute z-40 shadow-2xl border-2 border-gray-500 rounded-xl overflow-hidden select-none ${isDragging ? "cursor-grabbing" : "cursor-grab"} ${receiptMinimized ? "w-auto" : "w-72 md:w-80"}`}
             style={{ left: receiptPos.x || "auto", top: receiptPos.y || "auto", right: receiptPos.x ? undefined : 8, bottom: receiptPos.y ? undefined : 8 }}>
@@ -273,7 +286,7 @@ export default function POSPage() {
               <span className="text-xs font-bold text-gray-300 flex items-center gap-1">🖐️ {totalDrinksCount} Getränke</span>
               <div className="flex items-center gap-1">
                 <button onClick={() => setReceiptMinimized((p) => !p)} className="text-gray-400 hover:text-white text-xs px-2 py-0.5 rounded bg-gray-600 hover:bg-gray-500">{receiptMinimized ? "▲" : "▼"}</button>
-                <button onClick={() => { setReceiptPos({ x: 0, y: 0 }); setReceiptMinimized(false); }} className="text-gray-400 hover:text-white text-xs px-2 py-0.5 rounded bg-gray-600 hover:bg-gray-500" title="Zurücksetzen">⌂</button>
+                <button onClick={() => { setReceiptPos({ x:0, y:0 }); setReceiptMinimized(false); }} className="text-gray-400 hover:text-white text-xs px-2 py-0.5 rounded bg-gray-600 hover:bg-gray-500">⌂</button>
               </div>
             </div>
             {!receiptMinimized && (
@@ -306,20 +319,19 @@ export default function POSPage() {
         )}
       </div>
 
-      {/* Modals */}
+      {/* Modals (identisch wie vorher) */}
       {showResetConfirm && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
           <div className="bg-gray-800 rounded-2xl p-5 max-w-sm w-full shadow-2xl border border-gray-600">
             <h2 className="text-lg font-bold mb-2 text-center">⚠️ Bestellung abschließen?</h2>
             <div className="mb-3 bg-gray-700/50 rounded-lg p-2"><label className="block text-xs text-gray-400 mb-1">Verkaufsstelle</label>
               <select value={selectedSalesPointId ?? ""} onChange={(e) => setSelectedSalesPointId(parseInt(e.target.value))} className="w-full bg-gray-700 text-white text-sm rounded-lg px-2 py-1.5 border border-gray-600 focus:border-blue-500 focus:outline-none">
-                {salesPoints.map((sp) => (<option key={sp.id} value={sp.id}>{sp.name}</option>))}
-              </select></div>
+                {salesPoints.map((sp) => (<option key={sp.id} value={sp.id}>{sp.name}</option>))}</select></div>
             <div className="text-center mb-3 space-y-1"><p className="text-gray-300 text-sm">Gesamtbetrag:</p><p className="text-3xl font-extrabold text-green-400 tabular-nums">{grandTotal.toFixed(2)} €</p>{netDeposit !== 0 && <p className="text-xs text-amber-400">(inkl. Pfand: {netDeposit > 0 ? "+" : ""}{netDeposit.toFixed(2)} €)</p>}<p className="text-xs text-gray-400">{totalDrinksCount} Getränke · {items.length} Positionen</p></div>
             {hasPourDrinks && <button onClick={sendToPour} disabled={pourSent} className={`w-full mb-3 py-2.5 rounded-lg text-sm font-bold border transition-all active:scale-[0.98] ${pourSent ? "bg-green-600 border-green-400 text-white cursor-default" : "bg-orange-600 hover:bg-orange-500 border-orange-400/40 text-white"}`}>{pourSent ? "✓ An Zapfanlage gesendet" : `🍺 ${pourItemCount}× an Zapfanlage senden`}</button>}
             <button onClick={() => setShowCalculator(true)} className="w-full mb-3 py-2 rounded-lg bg-blue-700/50 hover:bg-blue-600/50 text-blue-300 text-sm font-medium border border-blue-600/30 transition-all">🧮 Wechselgeld berechnen</button>
             <p className="text-xs text-gray-400 mb-4 text-center">Die Bestellung wird gespeichert und der Zähler auf Null zurückgesetzt.</p>
-            <div className="flex gap-3"><button onClick={() => setShowResetConfirm(false)} className="flex-1 py-2.5 rounded-xl font-bold bg-gray-600 hover:bg-gray-500 text-sm active:scale-[0.97] transition-all">Abbrechen</button><button onClick={handleReset} className="flex-1 py-2.5 rounded-xl font-bold bg-green-600 hover:bg-green-500 text-sm active:scale-[0.97] transition-all border border-green-400/30">Ja, abschließen</button></div>
+            <div className="flex gap-3"><button onClick={() => setShowResetConfirm(false)} className="flex-1 py-2.5 rounded-xl font-bold bg-gray-600 hover:bg-gray-500 transition-all">Abbrechen</button><button onClick={handleReset} className="flex-1 py-2.5 rounded-xl font-bold bg-green-600 hover:bg-green-500 transition-all border border-green-400/30">Ja, abschließen</button></div>
           </div>
         </div>
       )}
@@ -328,7 +340,7 @@ export default function POSPage() {
           <div className="bg-gray-800 rounded-2xl p-5 max-w-sm w-full shadow-2xl border border-gray-600">
             <h2 className="text-lg font-bold mb-3 text-center text-red-400">⚠️ Bestellung abbrechen?</h2>
             <div className="text-center mb-4"><p className="text-sm text-gray-300">Möchtest du die aktuelle Bestellung wirklich verwerfen?</p><p className="text-xs text-gray-400 mt-1">{totalDrinksCount} Getränke · {grandTotal.toFixed(2)} €</p></div>
-            <div className="flex gap-3"><button onClick={() => setShowCancelConfirm(false)} className="flex-1 py-2.5 rounded-xl font-bold bg-gray-600 hover:bg-gray-500 text-sm active:scale-[0.97] transition-all">Nein, weiter</button><button onClick={cancelOrder} className="flex-1 py-2.5 rounded-xl font-bold bg-red-600 hover:bg-red-500 text-sm active:scale-[0.97] transition-all border border-red-400/30">Ja, verwerfen</button></div>
+            <div className="flex gap-3"><button onClick={() => setShowCancelConfirm(false)} className="flex-1 py-2.5 rounded-xl font-bold bg-gray-600 hover:bg-gray-500 transition-all">Nein, weiter</button><button onClick={cancelOrder} className="flex-1 py-2.5 rounded-xl font-bold bg-red-600 hover:bg-red-500 transition-all border border-red-400/30">Ja, verwerfen</button></div>
           </div>
         </div>
       )}
@@ -338,7 +350,7 @@ export default function POSPage() {
             <h3 className="text-lg font-bold mb-3 text-center">Anzahl ändern</h3>
             <p className="text-sm text-gray-300 text-center mb-3">{orderItems.get(editingItem)?.drinkName}</p>
             <input type="number" min="0" value={editQuantity} onChange={(e) => setEditQuantity(e.target.value)} className="w-full px-3 py-2 rounded-xl bg-gray-700 text-white text-lg font-bold text-center border border-gray-600 focus:border-blue-500 focus:outline-none tabular-nums mb-4" autoFocus />
-            <div className="flex gap-3"><button onClick={() => setEditingItem(null)} className="flex-1 py-2.5 rounded-xl font-bold bg-gray-600 hover:bg-gray-500 text-sm active:scale-[0.97] transition-all">Abbrechen</button><button onClick={() => { const qty = parseInt(editQuantity); if (!isNaN(qty)) updateItemQuantity(editingItem, qty); setEditingItem(null); }} className="flex-1 py-2.5 rounded-xl font-bold bg-blue-600 hover:bg-blue-500 text-sm active:scale-[0.97] transition-all">Speichern</button></div>
+            <div className="flex gap-3"><button onClick={() => setEditingItem(null)} className="flex-1 py-2.5 rounded-xl font-bold bg-gray-600 hover:bg-gray-500 transition-all">Abbrechen</button><button onClick={() => { const qty = parseInt(editQuantity); if (!isNaN(qty)) updateItemQuantity(editingItem, qty); setEditingItem(null); }} className="flex-1 py-2.5 rounded-xl font-bold bg-blue-600 hover:bg-blue-500 transition-all">Speichern</button></div>
           </div>
         </div>
       )}
@@ -346,33 +358,29 @@ export default function POSPage() {
       {showSuccess && lastOrder && !handout && (
         <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 bg-green-700 text-white px-5 py-2.5 rounded-xl shadow-2xl font-bold text-sm animate-bounce">✅ Bestellung #{lastOrder.orderId} gespeichert – {lastOrder.totalGross.toFixed(2)} €</div>
       )}
-
-      {/* Handout */}
       {handout && (
         <div className="fixed inset-0 z-[70] flex items-center justify-center bg-gray-900/95 p-4">
           <div className="bg-gray-800 rounded-2xl w-full max-w-md shadow-2xl border border-gray-600 max-h-[92vh] flex flex-col">
             <div className="p-4 border-b border-gray-700 shrink-0">
               <h2 className="text-xl font-extrabold text-center">🥤 Ausgabe – Bestellung #{handout.orderId}</h2>
               <p className="text-xs text-gray-400 text-center mt-1">{handout.salesPointName} · kassiert: <span className="text-green-400 font-bold tabular-nums">{handout.totalGross.toFixed(2)} €</span>{handout.depositReturnedCount > 0 && <span className="text-amber-400"> · {handout.depositReturnedCount} Becher zurückgenommen</span>}</p>
-              <p className="text-[11px] text-gray-500 text-center mt-1">Getränke zum Abhaken antippen – erst danach geht es weiter</p>
+              <p className="text-[11px] text-gray-500 text-center mt-1">Getränke zum Abhaken antippen</p>
             </div>
             <div className="flex-1 overflow-y-auto p-3 space-y-2">
               {handout.items.map((item) => {
                 const done = !!handout.checked[item.drinkId];
                 const drinkColor = drinks.find((d) => d.id === item.drinkId)?.color || "#6B7280";
-                return (
-                  <button key={item.drinkId} onClick={() => setHandout((h) => h ? {...h, checked:{...h.checked, [item.drinkId]:!h.checked[item.drinkId]}} : h)} className={`w-full flex items-center gap-3 rounded-xl border-2 px-3 py-3 text-left transition-all active:scale-[0.98] ${done ? "bg-green-900/40 border-green-500" : "bg-gray-700/50 border-gray-600 hover:border-gray-400"}`}>
-                    <span className="w-4 h-4 rounded-full shrink-0 border border-white/30" style={{backgroundColor: drinkColor}} />
-                    <span className={`flex-1 font-bold text-base md:text-lg ${done ? "line-through text-gray-400" : ""}`}>{item.quantity}× {item.drinkName}{item.isPourDrink && <span className="ml-2 text-[10px] bg-orange-600 px-1.5 py-0.5 rounded text-white font-extrabold align-middle">ZAPF</span>}</span>
-                    <span className={`w-8 h-8 rounded-full flex items-center justify-center text-lg font-black shrink-0 ${done ? "bg-green-500 text-white" : "bg-gray-600 text-gray-400"}`}>✓</span>
-                  </button>
-                );
+                return (<button key={item.drinkId} onClick={() => setHandout((h) => h ? {...h, checked:{...h.checked, [item.drinkId]:!h.checked[item.drinkId]}} : h)} className={`w-full flex items-center gap-3 rounded-xl border-2 px-3 py-3 text-left transition-all active:scale-[0.98] ${done ? "bg-green-900/40 border-green-500" : "bg-gray-700/50 border-gray-600 hover:border-gray-400"}`}>
+                  <span className="w-4 h-4 rounded-full shrink-0 border border-white/30" style={{backgroundColor: drinkColor}} />
+                  <span className={`flex-1 font-bold text-base md:text-lg ${done ? "line-through text-gray-400" : ""}`}>{item.quantity}× {item.drinkName}{item.isPourDrink && <span className="ml-2 text-[10px] bg-orange-600 px-1.5 py-0.5 rounded text-white font-extrabold align-middle">ZAPF</span>}</span>
+                  <span className={`w-8 h-8 rounded-full flex items-center justify-center text-lg font-black shrink-0 ${done ? "bg-green-500 text-white" : "bg-gray-600 text-gray-400"}`}>✓</span>
+                </button>);
               })}
             </div>
             <div className="p-4 border-t border-gray-700 shrink-0">
               <div className="flex items-center justify-between text-xs text-gray-400 mb-2"><span>{handoutCheckedCount} / {handout.items.length} ausgegeben</span><span>{handoutAllDone ? "✅ Komplett" : "Noch offen"}</span></div>
               <div className="w-full h-2 rounded-full bg-gray-700 mb-3 overflow-hidden"><div className="h-full bg-green-500 transition-all" style={{width: `${handout.items.length > 0 ? (handoutCheckedCount / handout.items.length) * 100 : 0}%`}} /></div>
-              <button onClick={() => setHandout(null)} disabled={!handoutAllDone} className={`w-full py-3 rounded-xl font-bold text-sm md:text-base transition-all active:scale-[0.98] ${handoutAllDone ? "bg-green-600 hover:bg-green-500 border border-green-400/30" : "bg-gray-700 text-gray-500 cursor-not-allowed"}`}>{handoutAllDone ? "✅ Ausgabe abgeschlossen – neue Bestellung" : "Erst alle Getränke abhaken"}</button>
+              <button onClick={() => setHandout(null)} disabled={!handoutAllDone} className={`w-full py-3 rounded-xl font-bold transition-all ${handoutAllDone ? "bg-green-600 hover:bg-green-500" : "bg-gray-700 text-gray-500 cursor-not-allowed"}`}>{handoutAllDone ? "✅ Ausgabe abgeschlossen – neue Bestellung" : "Erst alle Getränke abhaken"}</button>
             </div>
           </div>
         </div>
