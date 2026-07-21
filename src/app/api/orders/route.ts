@@ -44,7 +44,7 @@ export async function POST(req: NextRequest) {
       if (!drink || !drink.isActive) {
         return NextResponse.json({ error: `Getränk mit ID ${item.drinkId} nicht gefunden` }, { status: 400 });
       }
-      const priceGross = +(drink.priceNet * (1 + drink.taxRate / 100)).toFixed(2);
+      const priceGross = drink.priceGross;
       const depositPerUnit = drink.hasDeposit ? drink.depositAmount : 0;
       const itemTotalGross = +(priceGross * item.quantity).toFixed(2);
       const itemTotalDeposit = +(depositPerUnit * item.quantity).toFixed(2);
