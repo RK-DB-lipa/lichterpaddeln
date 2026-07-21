@@ -1,34 +1,34 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
-import { getSession, getAuthAdmin } from "@/lib/auth";
-import { drinks, salesPoints, orders, orderItems, pourQueue, pourStats, cupCounters, drinkSalesPoints } from "@/db/schema";
-import { eq, desc } from "drizzle-orm";
+import { getAuthAdmin, signToken } from "@/lib/auth";
+import { managedUsers } from "@/db/schema";
+import { eq, sql } from "drizzle-orm";
 
-// GET: Liste alle Tenant-IDs (managed_users) + Infos
 export async function GET() {
   try {
     const admin = await getAuthAdmin();
     if (!admin) return NextResponse.json({ error: "Nur für Super-Admin" }, { status: 401 });
 
-    // Alle aktiven Nutzer
-    const { managedUsers } = await import("@/db/schema");
     const users = await db.select().from(managedUsers).orderBy(managedUsers.username);
 
-    // Für jeden Nutzer: Getränkeanzahl, Bestellanzahl, Zapfanzahl
     const result = [];
     for (const user of users) {
       const tId = user.id;
-      const [drinkCount] = await db.select({ count: db.fn.count() }).from(drinks).where(eq(drinks.tenantId, tId));
-      const [orderCount] = await db.select({ count: db.fn.count() }).from(orders).where(eq(orders.tenantId, tId));
-      const [pourCount] = await db.select({ sum: db.fn.sum(pourStats.totalPoured) }).from(pourStats).where(eq(pourStats.tenantId, tId));
+      const rows: any = await db.execute(sql`
+        SELECT
+          (SELECT count(*)::int FROM drinks WHERE tenant_id = ${tId}) as drinks,
+          (SELECT count(*)::int FROM orders WHERE tenant_id = ${tId}) as orders,
+          (SELECT COALESCE(sum(total_poured), 0)::int FROM pour_stats WHERE tenant_id = ${tId}) as pours
+      `);
+      const data = rows?.[0] || {};
       result.push({
         userId: user.id,
         username: user.username,
         isActive: user.isActive,
         expiresAt: user.expiresAt,
-        drinks: drinkCount?.count || 0,
-        orders: orderCount?.count || 0,
-        pours: pourCount?.sum || 0,
+        drinks: data.drinks || 0,
+        orders: data.orders || 0,
+        pours: data.pours || 0,
       });
     }
     return NextResponse.json(result);
@@ -38,7 +38,6 @@ export async function GET() {
   }
 }
 
-// POST: Wechsel zu einem bestimmten Tenant (gibt JWT für diesen Tenant zurück)
 export async function POST(req: NextRequest) {
   try {
     const admin = await getAuthAdmin();
@@ -48,11 +47,9 @@ export async function POST(req: NextRequest) {
     const { tenantId } = body;
     if (!tenantId) return NextResponse.json({ error: "tenantId erforderlich" }, { status: 400 });
 
-    const { managedUsers } = await import("@/db/schema");
     const user = await db.select().from(managedUsers).where(eq(managedUsers.id, tenantId)).limit(1);
     if (user.length === 0) return NextResponse.json({ error: "Nutzer nicht gefunden" }, { status: 404 });
 
-    const { signToken } = await import("@/lib/auth");
     const token = await signToken({
       role: "admin",
       username: `superadmin_${user[0].username}`,
