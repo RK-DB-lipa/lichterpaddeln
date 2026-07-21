@@ -9,7 +9,7 @@ type OrderTotals = { totalOrders: number; totalRevenue: number; totalDepositsCha
 type Order = { id: number; salesPointId: number; totalGross: number; totalDeposit: number; totalDepositReturned: number; netDeposit: number; cashierName?: string; createdAt: string; };
 type OrderDetail = { drinkName: string; quantity: number; unitPriceGross: number; unitDeposit: number; totalPriceGross: number; totalDeposit: number; };
 type PourStat = { drinkName: string; totalPoured: number; };
-type CupCounter = { salesPointId: number; given02: number; given04: number; };
+type CupCounter = { salesPointId: number; given02: number; given04: number; returned02: number; returned04: number; };
 type TenantInfo = { userId: number; username: string; isActive: boolean; expiresAt: string; drinks: number; orders: number; pours: number; };
 
 const EMPTY_DRINK = { name: "", priceGross: "", taxRate: "19", hasDeposit: true, depositAmount: "2.00", cupSize: "04", color: "#3B82F6", imageUrl: "", sortOrder: "0", isPourDrink: false, salesPointIds: [] as number[] };
@@ -95,7 +95,7 @@ export default function AdminPage() {
     e.preventDefault(); setLoginError("");
     try {
       const r = await fetch("/api/auth/login", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ username, password }) });
-      if (r.ok) { setSession({ authenticated: true }); setUsername(""); setPassword(""); } else { const d = await r.json(); setLoginError(d.error || "Fehler"); }
+      if (r.ok) { window.location.reload(); } else { const d = await r.json(); setLoginError(d.error || "Fehler"); }
     } catch { setLoginError("Verbindungsfehler"); }
   }
   async function handleLogout() { await fetch("/api/auth/logout", { method: "POST" }); setSession(null); }
@@ -119,7 +119,7 @@ export default function AdminPage() {
   async function handleResetCups() { try { await api("/api/cups/reset", "POST", cupResetTarget ? { salesPointId: parseInt(cupResetTarget) } : {}); setShowCupResetConfirm(false); setCupResetTarget(""); fetchCupCounters(); } catch (err) { console.error(err); } }
 
   const getSPName = (id: number) => salesPoints.find((sp) => sp.id === id)?.name || `ID ${id}`;
-  const cupTotals = cupCounters.reduce((a, c) => ({ given02: a.given02 + c.given02, given04: a.given04 + c.given04 }), { given02: 0, given04: 0 });
+  const cupTotals = cupCounters.reduce((a, c) => ({ given02: a.given02 + c.given02, given04: a.given04 + c.given04, returned02: a.returned02 + c.returned02, returned04: a.returned04 + c.returned04 }), { given02: 0, given04: 0, returned02: 0, returned04: 0 });
 
   const showOrderDetail = async (order: Order) => {
     try { const r = await fetch(`/api/orders/${order.id}`); if (r.ok) { const d = await r.json(); setOrderDetail({ order: d.order, items: d.items || [] }); } } catch (err) { console.error(err); }
@@ -404,13 +404,29 @@ function CupsTab({cupCounters,getSPName,cupTotals,setCupResetTarget,setShowCupRe
   return (<div><div className="flex justify-between items-center mb-4 flex-wrap gap-2"><h2 className="text-lg font-bold">Becher-Übersicht</h2>
     <button onClick={()=>{setCupResetTarget("");setShowCupResetConfirm(true);}} className="px-3 py-2 rounded-xl bg-red-800 hover:bg-red-700 text-sm font-bold border border-red-500/30">🔄 Alle nullen</button></div>
     <h3 className="text-md font-bold mb-2">Gesamt</h3>
-    <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
-      <div className="bg-gray-800 rounded-xl p-3 border border-gray-700"><div className="text-xs text-gray-400">0,2L im Umlauf</div><div className="text-2xl font-bold tabular-nums">{cupTotals.given02}</div></div>
-      <div className="bg-gray-800 rounded-xl p-3 border border-gray-700"><div className="text-xs text-gray-400">0,4L im Umlauf</div><div className="text-2xl font-bold tabular-nums">{cupTotals.given04}</div></div>
+    <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-6">
+      <div className="bg-gray-800 rounded-xl p-3 border border-gray-700"><div className="text-xs text-gray-400">0,2L ausgegeben</div><div className="text-2xl font-bold tabular-nums">{cupTotals.given02}</div></div>
+      <div className="bg-gray-800 rounded-xl p-3 border border-gray-700"><div className="text-xs text-gray-400">0,2L zurück</div><div className="text-2xl font-bold tabular-nums text-green-400">{cupTotals.returned02}</div></div>
+      <div className="bg-gray-800 rounded-xl p-3 border border-gray-700"><div className="text-xs text-gray-400">0,2L Umlauf</div><div className="text-2xl font-bold tabular-nums text-amber-400">{Math.max(0, cupTotals.given02 - cupTotals.returned02)}</div></div>
+      <div className="bg-gray-800 rounded-xl p-3 border border-gray-700"><div className="text-xs text-gray-400">0,4L ausgegeben</div><div className="text-2xl font-bold tabular-nums">{cupTotals.given04}</div></div>
+      <div className="bg-gray-800 rounded-xl p-3 border border-gray-700"><div className="text-xs text-gray-400">0,4L zurück</div><div className="text-2xl font-bold tabular-nums text-green-400">{cupTotals.returned04}</div></div>
     </div>
-    {cupCounters.map((c:any)=>(<div key={c.salesPointId} className="bg-gray-800 rounded-xl p-3 border border-gray-700 mb-2">
-      <div className="flex justify-between mb-1"><span className="font-bold">{getSPName(c.salesPointId)}</span><button onClick={()=>{setCupResetTarget(String(c.salesPointId));setShowCupResetConfirm(true);}} className="px-2 py-1 rounded-lg bg-red-900/50 hover:bg-red-800/50 text-xs font-bold">🔄 nullen</button></div>
-      <div className="text-xs flex gap-4"><span className="text-gray-400">0,2L: <strong>{c.given02}</strong></span><span className="text-gray-400">0,4L: <strong>{c.given04}</strong></span></div>
+    <h3 className="text-md font-bold mb-2">Pro Verkaufsstelle</h3>
+    {cupCounters.map((c:any)=>(<div key={c.salesPointId} className="bg-gray-800 rounded-xl p-4 border border-gray-700 mb-2">
+      <div className="flex justify-between items-center mb-3"><span className="font-bold text-base">{getSPName(c.salesPointId)}</span><button onClick={()=>{setCupResetTarget(String(c.salesPointId));setShowCupResetConfirm(true);}} className="px-3 py-1.5 rounded-lg bg-red-900/50 hover:bg-red-800/50 text-xs font-bold">🔄 nullen</button></div>
+      <div className="grid grid-cols-3 gap-3 text-center">
+        <div className="bg-gray-700/50 rounded-lg p-2"><div className="text-[10px] text-gray-400 uppercase font-bold">0,2L</div>
+          <div className="text-xs mt-1"><span className="text-gray-400">ausgegeben:</span> <strong className="tabular-nums">{c.given02}</strong></div>
+          <div className="text-xs"><span className="text-gray-400">zurück:</span> <strong className="tabular-nums text-green-400">{c.returned02}</strong></div>
+          <div className="text-xs border-t border-gray-600 pt-1 mt-1"><span className="text-gray-400">im Umlauf:</span> <strong className={`tabular-nums ${c.given02 - c.returned02 > 0 ? "text-amber-400" : "text-green-400"}`}>{Math.max(0, c.given02 - c.returned02)}</strong></div>
+        </div>
+        <div></div>
+        <div className="bg-gray-700/50 rounded-lg p-2"><div className="text-[10px] text-gray-400 uppercase font-bold">0,4L</div>
+          <div className="text-xs mt-1"><span className="text-gray-400">ausgegeben:</span> <strong className="tabular-nums">{c.given04}</strong></div>
+          <div className="text-xs"><span className="text-gray-400">zurück:</span> <strong className="tabular-nums text-green-400">{c.returned04}</strong></div>
+          <div className="text-xs border-t border-gray-600 pt-1 mt-1"><span className="text-gray-400">im Umlauf:</span> <strong className={`tabular-nums ${c.given04 - c.returned04 > 0 ? "text-amber-400" : "text-green-400"}`}>{Math.max(0, c.given04 - c.returned04)}</strong></div>
+        </div>
+      </div>
     </div>))}
   </div>);
 }

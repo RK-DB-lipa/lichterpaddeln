@@ -18,12 +18,12 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "size muss '02' oder '04' sein" }, { status: 400 });
     }
 
-    // Rückgabe = gegeben reduziert (Becher ist wieder da, minus vom Umlauf)
+    // Rückgabe = returned wird erhöht (separater Zähler)
     await db.execute(sql`
       INSERT INTO cup_counters (tenant_id, sales_point_id, size, given, returned, created_at)
-      VALUES (${tenantId}, ${parseInt(salesPointId)}, ${size}, 0, 0, now())
+      VALUES (${tenantId}, ${parseInt(salesPointId)}, ${size}, 0, ${parseInt(count)}, now())
       ON CONFLICT (tenant_id, sales_point_id, size)
-      DO UPDATE SET given = GREATEST(0, cup_counters.given - ${parseInt(count)})
+      DO UPDATE SET returned = cup_counters.returned + ${parseInt(count)}
     `);
 
     return NextResponse.json({ success: true });
