@@ -1,28 +1,21 @@
 import { NextResponse } from "next/server";
 import { db } from "@/db";
-import { pourStats, pourQueue } from "@/db/schema";
-import { getAuthAdmin } from "@/lib/auth";
+import { pourQueue, pourStats } from "@/db/schema";
+import { getSession } from "@/lib/auth";
+import { eq } from "drizzle-orm";
 
-// POST: Admin only - reset all pour stats and queues
 export async function POST() {
   try {
-    const admin = await getAuthAdmin();
-    if (!admin) {
-      return NextResponse.json({ error: "Nicht autorisiert" }, { status: 401 });
-    }
+    const session = await getSession();
+    if (!session) return NextResponse.json({ error: "Nicht autorisiert" }, { status: 401 });
+    const tenantId = session.tenantId;
 
-    await db.delete(pourStats);
-    await db.delete(pourQueue);
+    await db.delete(pourQueue).where(eq(pourQueue.tenantId, tenantId));
+    await db.delete(pourStats).where(eq(pourStats.tenantId, tenantId));
 
-    return NextResponse.json({
-      success: true,
-      message: "Alle Zapf-Zähler zurückgesetzt",
-    });
+    return NextResponse.json({ success: true, message: "Zapf-Zähler zurückgesetzt" });
   } catch (error) {
     console.error("POST /api/pour/reset error:", error);
-    return NextResponse.json(
-      { error: "Interner Serverfehler" },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: "Interner Serverfehler" }, { status: 500 });
   }
 }

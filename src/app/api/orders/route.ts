@@ -1,31 +1,37 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
-import { orders, orderItems, drinks } from "@/db/schema";
-import { getAuthAdmin } from "@/lib/auth";
+import { orders, orderItems, drinks, cupCounters } from "@/db/schema";
+import { getSession } from "@/lib/auth";
 import { eq, sql, desc, and } from "drizzle-orm";
 
-// POST: Public - submit an order (at checkout/reset)
+function bumpCup(tId: number, spId: number, size: string, givenCount: number) {
+  return sql`
+    INSERT INTO cup_counters (tenant_id, sales_point_id, size, given, returned, created_at)
+    VALUES (${tId}, ${spId}, ${size}, ${givenCount}, 0, now())
+    ON CONFLICT (tenant_id, sales_point_id, size)
+    DO UPDATE SET given = cup_counters.given + ${givenCount}
+  `;
+}
+
 export async function POST(req: NextRequest) {
   try {
+    const session = await getSession();
+    const tenantId = session?.tenantId ?? 0;
+
     const body = await req.json();
     const { items, depositReturned, salesPointId } = body;
 
     if (!salesPointId) {
-      return NextResponse.json(
-        { error: "Verkaufsstelle ist erforderlich" },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: "Verkaufsstelle ist erforderlich" }, { status: 400 });
     }
-
     if (!items || !Array.isArray(items) || items.length === 0) {
-      return NextResponse.json(
-        { error: "Mindestens ein Getränk erforderlich" },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: "Mindestens ein Getränk erforderlich" }, { status: 400 });
     }
 
-    // Fetch all drinks for price calculation
-    const allDrinks = await db.select().from(drinks);
+    const allDrinks = await db
+      .select()
+      .from(drinks)
+      .where(eq(drinks.tenantId, tenantId));
     const drinkMap = new Map(allDrinks.map((d) => [d.id, d]));
 
     let totalGross = 0;
@@ -35,20 +41,14 @@ export async function POST(req: NextRequest) {
     for (const item of items) {
       const drink = drinkMap.get(item.drinkId);
       if (!drink || !drink.isActive) {
-        return NextResponse.json(
-          { error: `Getränk mit ID ${item.drinkId} nicht gefunden` },
-          { status: 400 }
-        );
+        return NextResponse.json({ error: `Getränk mit ID ${item.drinkId} nicht gefunden` }, { status: 400 });
       }
-
       const priceGross = +(drink.priceNet * (1 + drink.taxRate / 100)).toFixed(2);
       const depositPerUnit = drink.hasDeposit ? drink.depositAmount : 0;
       const itemTotalGross = +(priceGross * item.quantity).toFixed(2);
       const itemTotalDeposit = +(depositPerUnit * item.quantity).toFixed(2);
-
       totalGross += itemTotalGross;
       totalDeposit += itemTotalDeposit;
-
       orderItemData.push({
         orderId: 0,
         drinkId: drink.id,
@@ -59,15 +59,20 @@ export async function POST(req: NextRequest) {
         totalPriceGross: itemTotalGross,
         totalDeposit: itemTotalDeposit,
       });
+
+      // Track handed-out deposit cups
+      if (drink.hasDeposit) {
+        await db.execute(bumpCup(tenantId, salesPointId, drink.cupSize ?? "04", item.quantity));
+      }
     }
 
     const depositReturnAmount = (depositReturned || 0) * 2;
     const netDeposit = totalDeposit - depositReturnAmount;
 
-    // Create order
     const [order] = await db
       .insert(orders)
       .values({
+        tenantId,
         salesPointId: parseInt(salesPointId),
         totalGross: +totalGross.toFixed(2),
         totalDeposit: +totalDeposit.toFixed(2),
@@ -76,12 +81,7 @@ export async function POST(req: NextRequest) {
       })
       .returning();
 
-    // Create order items
-    const itemsWithOrderId = orderItemData.map((item) => ({
-      ...item,
-      orderId: order.id,
-    }));
-
+    const itemsWithOrderId = orderItemData.map((item) => ({ ...item, orderId: order.id }));
     await db.insert(orderItems).values(itemsWithOrderId);
 
     return NextResponse.json(
@@ -97,84 +97,76 @@ export async function POST(req: NextRequest) {
     );
   } catch (error) {
     console.error("POST /api/orders error:", error);
-    return NextResponse.json(
-      { error: "Interner Serverfehler" },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: "Interner Serverfehler" }, { status: 500 });
   }
 }
 
-// GET: Admin only - list all orders with summaries
 export async function GET(req: NextRequest) {
   try {
-    const admin = await getAuthAdmin();
-    if (!admin) {
+    const session = await getSession();
+    if (!session) {
       return NextResponse.json({ error: "Nicht autorisiert" }, { status: 401 });
     }
+    const tenantId = session.tenantId;
 
     const url = new URL(req.url);
     const salesPointId = url.searchParams.get("salesPointId");
 
-    // Build filter condition
-    const whereCondition = salesPointId
-      ? eq(orders.salesPointId, parseInt(salesPointId))
-      : undefined;
+    const where = salesPointId
+      ? and(eq(orders.tenantId, tenantId), eq(orders.salesPointId, parseInt(salesPointId)))
+      : eq(orders.tenantId, tenantId);
 
-    // Get orders
-    const allOrders = whereCondition
-      ? await db
-          .select()
-          .from(orders)
-          .where(whereCondition)
-          .orderBy(desc(orders.createdAt))
-      : await db.select().from(orders).orderBy(desc(orders.createdAt));
+    const allOrders = await db
+      .select()
+      .from(orders)
+      .where(where)
+      .orderBy(desc(orders.createdAt));
 
-    // Get summary grouped by drink
+    // Collect order item data for these orders
+    // Since the summary query uses joins, we do it per tenant
+    const summaryWhere = salesPointId
+      ? and(
+          eq(orders.tenantId, tenantId),
+          eq(orders.salesPointId, parseInt(salesPointId))
+        )
+      : eq(orders.tenantId, tenantId);
+
     const summaryQuery = db
       .select({
         drinkId: orderItems.drinkId,
         drinkName: orderItems.drinkName,
-        totalQuantity: sql<number>`sum(${orderItems.quantity})`,
-        totalGross: sql<number>`sum(${orderItems.totalPriceGross})`,
-        totalDeposit: sql<number>`sum(${orderItems.totalDeposit})`,
+        totalQuantity: sql`sum(${orderItems.quantity})`,
+        totalGross: sql`sum(${orderItems.totalPriceGross})`,
+        totalDeposit: sql`sum(${orderItems.totalDeposit})`,
       })
       .from(orderItems)
-      .innerJoin(orders, eq(orderItems.orderId, orders.id));
+      .innerJoin(orders, eq(orderItems.orderId, orders.id))
+      .where(summaryWhere)
+      .groupBy(orderItems.drinkId, orderItems.drinkName)
+      .orderBy(desc(sql`sum(${orderItems.quantity})`));
 
-    const summary = salesPointId
-      ? await summaryQuery
-          .where(eq(orders.salesPointId, parseInt(salesPointId)))
-          .groupBy(orderItems.drinkId, orderItems.drinkName)
-          .orderBy(desc(sql`sum(${orderItems.quantity})`))
-      : await summaryQuery
-          .groupBy(orderItems.drinkId, orderItems.drinkName)
-          .orderBy(desc(sql`sum(${orderItems.quantity})`));
+    const drinkSummary = await summaryQuery;
 
-    // Totals
     const totalsQuery = db
       .select({
-        totalOrders: sql<number>`count(*)`,
-        totalRevenue: sql<number>`sum(${orders.totalGross})`,
-        totalDepositsCharged: sql<number>`sum(${orders.totalDeposit})`,
-        totalDepositsReturned: sql<number>`sum(${orders.totalDepositReturned})`,
-        netDeposits: sql<number>`sum(${orders.netDeposit})`,
+        totalOrders: sql`count(*)`,
+        totalRevenue: sql`sum(${orders.totalGross})`,
+        totalDepositsCharged: sql`sum(${orders.totalDeposit})`,
+        totalDepositsReturned: sql`sum(${orders.totalDepositReturned})`,
+        netDeposits: sql`sum(${orders.netDeposit})`,
       })
-      .from(orders);
+      .from(orders)
+      .where(where);
 
-    const orderTotals = salesPointId
-      ? await totalsQuery.where(eq(orders.salesPointId, parseInt(salesPointId)))
-      : await totalsQuery;
+    const orderTotals = await totalsQuery;
 
     return NextResponse.json({
       orders: allOrders,
-      drinkSummary: summary,
+      drinkSummary,
       totals: orderTotals[0],
     });
   } catch (error) {
     console.error("GET /api/orders error:", error);
-    return NextResponse.json(
-      { error: "Interner Serverfehler" },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: "Interner Serverfehler" }, { status: 500 });
   }
 }
