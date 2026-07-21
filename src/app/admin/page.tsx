@@ -432,7 +432,7 @@ function ConfirmModal({title,children,onConfirm,onClose}:any){return(
 function UsersTabSimple() {
   const [users,setUsers]=useState<any[]>([]); const [showCreate,setShowCreate]=useState(false);const [nN,setNN]=useState("");const[nP,setNP]=useState("");const[nD,setND]=useState("30");const[cE,setCE]=useState("");
   const [eU,setEU]=useState<any>(null);const[eD,setED]=useState("30");const[pU,setPU]=useState<any>(null);const[pV,setPV]=useState("");
-  const reload=useCallback(async()=>{try{const r=await fetch("/api/users");if(r.ok)setUsers(await r.json())}catch(err){console.error(err)}});
+  const reload=useCallback(async()=>{try{const r=await fetch("/api/users");if(r.ok)setUsers(await r.json())}catch(err){console.error(err)}},[]);
   useEffect(()=>{reload();},[reload]);
   async function api(p:string,m:string,b?:any){const r=await fetch(p,{method:m,headers:{"Content-Type":"application/json"},body:b?JSON.stringify(b):undefined});if(!r.ok)throw new Error((await r.json()).error||"Fehler");return r.json();}
   async function hC(e:React.FormEvent){e.preventDefault();setCE("");try{await api("/api/users","POST",{username:nN,password:nP,days:parseInt(nD)});setShowCreate(false);setNN("");setNP("");setND("30");reload();}catch(err:any){setCE(err.message||"Fehler");}}
