@@ -8,8 +8,9 @@ const JWT_SECRET = new TextEncoder().encode(
 export type SessionPayload = {
   role: "admin" | "user";
   username: string;
-  userId?: number; // managed user id (nur role=user)
-  tenantId: number; // 0 = super admin
+  userId?: number;
+  tenantId: number;
+  displayName?: string;
 };
 
 export async function signToken(payload: SessionPayload) {
@@ -32,17 +33,33 @@ export async function getSession(): Promise<SessionPayload | null> {
   const cookieStore = await cookies();
   const token = cookieStore.get("admin_token")?.value;
   if (!token) return null;
-  return verifyToken(token);
+  const session = await verifyToken(token);
+  if (!session) return null;
+
+  // Für Lizenznutzer: Prüfe ob noch aktiv & nicht abgelaufen
+  if (session.role === "user" && session.userId) {
+    const { db } = await import("@/db");
+    const { managedUsers } = await import("@/db/schema");
+    const { eq } = await import("drizzle-orm");
+    const user = await db
+      .select()
+      .from(managedUsers)
+      .where(eq(managedUsers.id, session.userId))
+      .limit(1);
+    if (user.length === 0 || !user[0].isActive || new Date(user[0].expiresAt).getTime() < Date.now()) {
+      return null;
+    }
+  }
+
+  return session;
 }
 
-// Nur Super-Admin (für Nutzerverwaltung & Admin-Routen)
 export async function getAuthAdmin() {
   const session = await getSession();
   if (!session || session.role !== "admin") return null;
   return { adminId: 1, username: session.username };
 }
 
-// Tenant des aktuellen Requests (0 = super admin, sonst user.id)
 export async function getTenantId(): Promise<number> {
   const session = await getSession();
   return session?.tenantId ?? 0;

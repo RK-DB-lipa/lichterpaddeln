@@ -2,17 +2,14 @@ import { NextResponse } from "next/server";
 import { sql } from "drizzle-orm";
 import { db } from "@/db";
 
-// Idempotent migration: safe to run multiple times.
 const STATEMENTS = [
-  // tenantId on all scoped tables (0 = super admin, existing rows keep working)
   `ALTER TABLE sales_points ADD COLUMN IF NOT EXISTS tenant_id integer NOT NULL DEFAULT 0`,
   `ALTER TABLE drinks ADD COLUMN IF NOT EXISTS tenant_id integer NOT NULL DEFAULT 0`,
   `ALTER TABLE orders ADD COLUMN IF NOT EXISTS tenant_id integer NOT NULL DEFAULT 0`,
   `ALTER TABLE pour_queue ADD COLUMN IF NOT EXISTS tenant_id integer NOT NULL DEFAULT 0`,
   `ALTER TABLE pour_stats ADD COLUMN IF NOT EXISTS tenant_id integer NOT NULL DEFAULT 0`,
-  // cup size on drinks
   `ALTER TABLE drinks ADD COLUMN IF NOT EXISTS cup_size varchar(10) NOT NULL DEFAULT '04'`,
-  // licensed users
+  `ALTER TABLE orders ADD COLUMN IF NOT EXISTS cashier_name varchar(200) DEFAULT ''`,
   `CREATE TABLE IF NOT EXISTS managed_users (
     id serial PRIMARY KEY,
     username varchar(100) NOT NULL UNIQUE,
@@ -21,7 +18,6 @@ const STATEMENTS = [
     expires_at timestamp NOT NULL,
     created_at timestamp NOT NULL DEFAULT now()
   )`,
-  // cup counters
   `CREATE TABLE IF NOT EXISTS cup_counters (
     id serial PRIMARY KEY,
     tenant_id integer NOT NULL DEFAULT 0,
@@ -44,7 +40,7 @@ export async function POST() {
     }
     return NextResponse.json({
       success: true,
-      message: "Migration ausgeführt (Becher, Lizenzen, Mandanten)",
+      message: "Migration ausgeführt (Becher, Lizenzen, Mandanten, cashier_name)",
       statements: STATEMENTS.length,
     });
   } catch (error) {

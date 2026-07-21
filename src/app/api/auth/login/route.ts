@@ -7,7 +7,7 @@ import { eq } from "drizzle-orm";
 
 export async function POST(req: NextRequest) {
   try {
-    const { username, password } = await req.json();
+    const { username, password, displayName } = await req.json();
     if (!username || !password) {
       return NextResponse.json({ error: "Benutzername und Passwort erforderlich" }, { status: 400 });
     }
@@ -24,8 +24,9 @@ export async function POST(req: NextRequest) {
         role: "admin",
         username: admin[0].username,
         tenantId: 0,
+        displayName: displayName || admin[0].username,
       });
-      const response = NextResponse.json({ success: true });
+      const response = NextResponse.json({ success: true, displayName: displayName || admin[0].username });
       response.cookies.set("admin_token", token, {
         httpOnly: true,
         secure: process.env.NODE_ENV === "production",
@@ -49,9 +50,7 @@ export async function POST(req: NextRequest) {
       }
       if (new Date(user[0].expiresAt).getTime() < Date.now()) {
         return NextResponse.json(
-          {
-            error: `Lizenz abgelaufen am ${new Date(user[0].expiresAt).toLocaleDateString("de-DE")}`,
-          },
+          { error: `Lizenz abgelaufen am ${new Date(user[0].expiresAt).toLocaleDateString("de-DE")}` },
           { status: 403 }
         );
       }
@@ -60,9 +59,10 @@ export async function POST(req: NextRequest) {
         role: "user",
         username: user[0].username,
         userId: user[0].id,
-        tenantId: user[0].id, // tenant = user.id
+        tenantId: user[0].id,
+        displayName: displayName || user[0].username,
       });
-      const response = NextResponse.json({ success: true });
+      const response = NextResponse.json({ success: true, displayName: displayName || user[0].username });
       response.cookies.set("admin_token", token, {
         httpOnly: true,
         secure: process.env.NODE_ENV === "production",
