@@ -10,6 +10,12 @@ type StatItem = { drinkName: string; totalPoured: number };
 const DEFAULT_POUR_BUTTONS = ["Bier", "Radler", "Glühwein"];
 
 export default function ZapfPage() {
+  const [session, setSession] = useState<{ authenticated: boolean; username?: string; displayName?: string } | null | undefined>(undefined);
+  const [loginUsername, setLoginUsername] = useState("");
+  const [loginPassword, setLoginPassword] = useState("");
+  const [loginDisplayName, setLoginDisplayName] = useState("");
+  const [loginError, setLoginError] = useState("");
+
   const [salesPoints, setSalesPoints] = useState<SalesPoint[]>([]);
   const [selectedSalesPointId, setSelectedSalesPointId] = useState<number | null>(null);
   const [buttonList, setButtonList] = useState<string[]>(DEFAULT_POUR_BUTTONS);
@@ -17,19 +23,41 @@ export default function ZapfPage() {
   const [stats, setStats] = useState<Map<string, number>>(new Map());
   const [lastAction, setLastAction] = useState<string | null>(null);
 
+  useEffect(() => { checkAuth(); }, []);
+
+  async function checkAuth() {
+    try { const res = await fetch("/api/auth/me"); if (res.ok) { const d = await res.json(); setSession(d.authenticated ? d : null); } else setSession(null); }
+    catch { setSession(null); }
+  }
+
+  async function handleLogin(e: React.FormEvent) {
+    e.preventDefault(); setLoginError("");
+    try {
+      const res = await fetch("/api/auth/login", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ username: loginUsername, password: loginPassword, displayName: loginDisplayName || loginUsername }),
+      });
+      if (res.ok) { window.location.reload(); }
+      else { const d = await res.json(); setLoginError(d.error || "Anmeldung fehlgeschlagen"); }
+    } catch { setLoginError("Verbindungsfehler"); }
+  }
+
+  async function handleLogout() {
+    await fetch("/api/auth/logout", { method: "POST" });
+    window.location.reload();
+  }
+
   useEffect(() => {
+    if (!session?.authenticated) return;
     const saved = localStorage.getItem("zapfSalesPointId");
     if (saved) setSelectedSalesPointId(parseInt(saved));
     fetchSalesPoints();
     fetchDrinks();
     fetchStats();
-  }, []);
+  }, [session?.authenticated]);
 
   useEffect(() => {
-    if (selectedSalesPointId !== null) {
-      localStorage.setItem("zapfSalesPointId", selectedSalesPointId.toString());
-      fetchQueue();
-    }
+    if (selectedSalesPointId !== null) { localStorage.setItem("zapfSalesPointId", selectedSalesPointId.toString()); fetchQueue(); }
   }, [selectedSalesPointId]);
 
   useEffect(() => {
@@ -42,81 +70,82 @@ export default function ZapfPage() {
     try { const res = await fetch("/api/sales-points"); if (res.ok) { const d = await res.json(); setSalesPoints(d); if (d.length > 0 && selectedSalesPointId === null) setSelectedSalesPointId(d[0].id); } }
     catch (err) { console.error(err); }
   }
-
   async function fetchDrinks() {
-    try {
-      const res = await fetch("/api/drinks");
-      if (res.ok) {
-        const data: Drink[] = await res.json();
-        const dbPourNames = data.filter((d) => d.isPourDrink).map((d) => d.name);
-        const combined = new Set<string>();
-        combined.add("Bier"); combined.add("Radler"); combined.add("Glühwein");
-        dbPourNames.forEach((name) => { if (name.toLowerCase() !== "bier/radler") combined.add(name); });
-        setButtonList(Array.from(combined));
-      }
-    } catch (err) { console.error(err); setButtonList(["Bier", "Radler", "Glühwein"]); }
+    try { const res = await fetch("/api/drinks"); if (res.ok) { const data: Drink[] = await res.json(); const pour = data.filter((d) => d.isPourDrink).map((d) => d.name); const c = new Set<string>(); c.add("Bier"); c.add("Radler"); c.add("Glühwein"); pour.forEach((n) => { if (n.toLowerCase() !== "bier/radler") c.add(n); }); setButtonList(Array.from(c)); } }
+    catch { setButtonList(["Bier", "Radler", "Glühwein"]); }
   }
-
   async function fetchQueue() {
     if (!selectedSalesPointId) return;
     try { const res = await fetch(`/api/pour/queue?salesPointId=${selectedSalesPointId}`); if (res.ok) setRawQueue(await res.json()); }
     catch (err) { console.error(err); }
   }
-
   async function fetchStats() {
+    if (!selectedSalesPointId) return;
     try {
-      const res = await fetch("/api/pour/stats");
-      if (res.ok) { const data: StatItem[] = await res.json(); const map = new Map<string, number>(); data.forEach((item) => map.set(item.drinkName, item.totalPoured)); setStats(map); }
+      // Stats NUR für die aktuell gewählte Verkaufsstelle
+      const res = await fetch(`/api/pour/stats?salesPointId=${selectedSalesPointId}`);
+      if (res.ok) { const d: StatItem[] = await res.json(); const m = new Map<string, number>(); d.forEach((i) => m.set(i.drinkName, i.totalPoured)); setStats(m); }
     } catch (err) { console.error(err); }
   }
 
-  const getPendingCount = (buttonName: string) => {
-    const btnLower = buttonName.toLowerCase();
-    let count = 0;
+  const getPendingCount = (btn: string) => {
+    const bl = btn.toLowerCase(); let c = 0;
     rawQueue.forEach((q) => {
-      if (q.pendingCount <= 0) return;
-      const qLower = q.drinkName.toLowerCase();
-      if (qLower === btnLower) count += q.pendingCount;
-      else if ((qLower.includes("bier/radler") || qLower.includes("bier / radler")) && (btnLower === "bier" || btnLower === "radler")) count += q.pendingCount;
-      else if (qLower.includes(btnLower) || btnLower.includes(qLower)) count += q.pendingCount;
+      if (q.pendingCount <= 0) return; const ql = q.drinkName.toLowerCase();
+      if (ql === bl) c += q.pendingCount;
+      else if ((ql.includes("bier/radler") || ql.includes("bier / radler")) && (bl === "bier" || bl === "radler")) c += q.pendingCount;
+      else if (ql.includes(bl) || bl.includes(ql)) c += q.pendingCount;
     });
-    return count;
+    return c;
+  };
+  const getPouredCount = (btn: string) => {
+    const bl = btn.toLowerCase(); let t = 0;
+    stats.forEach((p, n) => { const nl = n.toLowerCase(); if (nl === bl || (nl.includes("bier/radler") && (bl === "bier" || bl === "radler")) || nl.includes(bl) || bl.includes(nl)) t += p; });
+    return t;
   };
 
-  const getPouredCount = (buttonName: string) => {
-    const btnLower = buttonName.toLowerCase();
-    let total = 0;
-    stats.forEach((poured, name) => {
-      const nLower = name.toLowerCase();
-      if (nLower === btnLower || (nLower.includes("bier/radler") && (btnLower === "bier" || btnLower === "radler")) || nLower.includes(btnLower) || btnLower.includes(nLower)) total += poured;
-    });
-    return total;
-  };
-
-  const handleComplete = useCallback(async (drinkName: string) => {
+  const handleComplete = useCallback(async (dn: string) => {
     if (!selectedSalesPointId) return;
-    setRawQueue((prev) => prev.map((q) => {
-      const qL = q.drinkName.toLowerCase(); const dL = drinkName.toLowerCase();
-      const matches = qL === dL || (qL.includes("bier/radler") && (dL === "bier" || dL === "radler")) || qL.includes(dL) || dL.includes(qL);
-      return (matches && q.pendingCount > 0) ? { ...q, pendingCount: q.pendingCount - 1 } : q;
-    }));
-    try {
-      const res = await fetch("/api/pour/complete", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ salesPointId: selectedSalesPointId, drinkName }) });
-      if (res.ok) { setLastAction(`${drinkName} gezapft`); setTimeout(() => setLastAction(null), 1200); fetchQueue(); fetchStats(); } else fetchQueue();
-    } catch (err) { console.error(err); fetchQueue(); }
+    setRawQueue((p) => p.map((q) => { const ql = q.drinkName.toLowerCase(); const dl = dn.toLowerCase(); const m = ql === dl || (ql.includes("bier/radler") && (dl === "bier" || dl === "radler")) || ql.includes(dl) || dl.includes(ql); return (m && q.pendingCount > 0) ? { ...q, pendingCount: q.pendingCount - 1 } : q; }));
+    try { const res = await fetch("/api/pour/complete", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ salesPointId: selectedSalesPointId, drinkName: dn }) }); if (res.ok) { setLastAction(`${dn} gezapft`); setTimeout(() => setLastAction(null), 1200); fetchQueue(); fetchStats(); } else fetchQueue(); }
+    catch (err) { console.error(err); fetchQueue(); }
   }, [selectedSalesPointId]);
 
   const sp = salesPoints.find((s) => s.id === selectedSalesPointId);
+
+  if (session === undefined) return <div className="h-screen bg-gray-900 flex items-center justify-center text-white"><p>Laden...</p></div>;
+
+  if (session === null) {
+    return (
+      <div className="h-screen bg-gray-900 flex items-center justify-center p-4">
+        <form onSubmit={handleLogin} className="bg-gray-800 rounded-2xl p-6 w-full max-w-sm shadow-2xl border border-gray-700">
+          <h1 className="text-2xl font-bold text-white mb-6 text-center">🍺 Zapf – Anmeldung</h1>
+          {loginError && <div className="bg-red-900/50 text-red-300 text-sm p-3 rounded-lg mb-4 border border-red-700">{loginError}</div>}
+          <div className="space-y-4">
+            <div><label className="block text-sm text-gray-400 mb-1">Benutzername</label>
+              <input type="text" value={loginUsername} onChange={(e) => setLoginUsername(e.target.value)} className="w-full px-4 py-3 rounded-xl bg-gray-700 text-white border border-gray-600 focus:border-blue-500 focus:outline-none" autoFocus /></div>
+            <div><label className="block text-sm text-gray-400 mb-1">Passwort</label>
+              <input type="password" value={loginPassword} onChange={(e) => setLoginPassword(e.target.value)} className="w-full px-4 py-3 rounded-xl bg-gray-700 text-white border border-gray-600 focus:border-blue-500 focus:outline-none" /></div>
+            <div><label className="block text-sm text-gray-400 mb-1">Dein Name (für die Kasse)</label>
+              <input type="text" value={loginDisplayName} onChange={(e) => setLoginDisplayName(e.target.value)} className="w-full px-4 py-3 rounded-xl bg-gray-700 text-white border border-gray-600 focus:border-blue-500 focus:outline-none" placeholder="z.B. Max" /></div>
+            <button type="submit" className="w-full py-3 rounded-xl font-bold bg-blue-600 hover:bg-blue-500 transition-all">Anmelden</button>
+          </div>
+        </form>
+      </div>
+    );
+  }
 
   return (
     <div className="h-screen flex flex-col bg-gray-900 text-white overflow-hidden select-none">
       <header className="flex items-center justify-between px-3 py-2 bg-gray-800 border-b border-gray-700 shrink-0">
         <div className="flex items-center gap-2"><span className="text-xl">🍺</span><span className="font-bold text-sm md:text-base truncate">Zapfen – {sp?.name || "..."}</span></div>
         <div className="flex items-center gap-2">
+          <span className="text-[10px] bg-gray-700 rounded px-1.5 py-0.5 text-gray-300 hidden sm:inline">👤 {session.displayName || session.username}</span>
           <select value={selectedSalesPointId ?? ""} onChange={(e) => setSelectedSalesPointId(parseInt(e.target.value))} className="bg-gray-700 text-white text-xs md:text-sm rounded-lg px-2 py-1 border border-gray-600 focus:border-blue-500 focus:outline-none">
             {salesPoints.map((sp) => (<option key={sp.id} value={sp.id}>{sp.name}</option>))}
           </select>
-          <a href="/" className="text-xs bg-gray-700 hover:bg-gray-600 rounded-lg px-2 py-1 border border-gray-600 font-bold transition-colors" title="Zur Kasse">🧾 Kasse</a>
+          <a href="/" className="text-xs bg-gray-700 hover:bg-gray-600 rounded-lg px-2 py-1 border border-gray-600 font-bold transition-colors">🧾 Kasse</a>
+          <button onClick={handleLogout} className="text-[10px] text-red-400 hover:text-red-300 ml-0.5" title="Abmelden">🚪</button>
         </div>
       </header>
       {lastAction && <div className="shrink-0 bg-green-700 text-white text-center py-1 text-xs md:text-sm font-bold animate-pulse">✅ {lastAction}</div>}
@@ -131,7 +160,7 @@ export default function ZapfPage() {
           })}
         </div>
         <div className="flex flex-col gap-2.5 md:gap-4">
-          <div className="text-xs text-green-400 font-bold text-center uppercase tracking-wider mb-0.5">Gezapft</div>
+          <div className="text-xs text-green-400 font-bold text-center uppercase tracking-wider mb-0.5">Gezapft (diese Stelle)</div>
           {buttonList.map((drink) => {
             const c = getPouredCount(drink); const p = getPendingCount(drink);
             return (<button key={`g-${drink}`} onClick={() => handleComplete(drink)} className={`w-24 h-24 md:w-36 md:h-36 rounded-2xl flex flex-col items-center justify-center bg-green-600 hover:bg-green-500 active:bg-green-700 active:scale-95 border-3 md:border-4 border-green-400 shadow-xl transition-all p-1.5 text-center ${p === 0 ? "opacity-75 hover:opacity-100" : "ring-2 ring-green-300"}`}>

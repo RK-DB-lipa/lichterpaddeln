@@ -10,6 +10,7 @@ export async function GET() {
     authenticated: true,
     role: session.role,
     username: session.username,
+    displayName: session.displayName || session.username,
     tenantId: session.tenantId,
     userId: session.userId ?? null,
   });

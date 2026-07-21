@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
-import { orders, orderItems, drinks, cupCounters } from "@/db/schema";
+import { orders, orderItems, drinks, cupCounters, salesPoints } from "@/db/schema";
 import { getSession } from "@/lib/auth";
 import { eq, sql, desc, and } from "drizzle-orm";
 
@@ -17,9 +17,10 @@ export async function POST(req: NextRequest) {
   try {
     const session = await getSession();
     const tenantId = session?.tenantId ?? 0;
+    const displayName = session?.displayName || "";
 
     const body = await req.json();
-    const { items, depositReturned, salesPointId } = body;
+    const { items, depositReturned, salesPointId, cashierName } = body;
 
     if (!salesPointId) {
       return NextResponse.json({ error: "Verkaufsstelle ist erforderlich" }, { status: 400 });
@@ -60,7 +61,6 @@ export async function POST(req: NextRequest) {
         totalDeposit: itemTotalDeposit,
       });
 
-      // Track handed-out deposit cups
       if (drink.hasDeposit) {
         await db.execute(bumpCup(tenantId, salesPointId, drink.cupSize ?? "04", item.quantity));
       }
@@ -78,6 +78,7 @@ export async function POST(req: NextRequest) {
         totalDeposit: +totalDeposit.toFixed(2),
         totalDepositReturned: depositReturnAmount,
         netDeposit: +netDeposit.toFixed(2),
+        cashierName: cashierName || displayName || "",
       })
       .returning();
 
@@ -91,6 +92,7 @@ export async function POST(req: NextRequest) {
         totalDeposit: order.totalDeposit,
         totalDepositReturned: order.totalDepositReturned,
         netDeposit: order.netDeposit,
+        cashierName: order.cashierName,
         items: itemsWithOrderId,
       },
       { status: 201 }
@@ -111,10 +113,14 @@ export async function GET(req: NextRequest) {
 
     const url = new URL(req.url);
     const salesPointId = url.searchParams.get("salesPointId");
+    const cashierNameFilter = url.searchParams.get("cashierName");
 
-    const where = salesPointId
-      ? and(eq(orders.tenantId, tenantId), eq(orders.salesPointId, parseInt(salesPointId)))
-      : eq(orders.tenantId, tenantId);
+    // Build filter conditions
+    const conditions = [eq(orders.tenantId, tenantId)];
+    if (salesPointId) conditions.push(eq(orders.salesPointId, parseInt(salesPointId)));
+    if (cashierNameFilter) conditions.push(eq(orders.cashierName, cashierNameFilter));
+
+    const where = and(...conditions);
 
     const allOrders = await db
       .select()
@@ -122,14 +128,7 @@ export async function GET(req: NextRequest) {
       .where(where)
       .orderBy(desc(orders.createdAt));
 
-    // Collect order item data for these orders
-    // Since the summary query uses joins, we do it per tenant
-    const summaryWhere = salesPointId
-      ? and(
-          eq(orders.tenantId, tenantId),
-          eq(orders.salesPointId, parseInt(salesPointId))
-        )
-      : eq(orders.tenantId, tenantId);
+    const summaryWhere = and(...conditions);
 
     const summaryQuery = db
       .select({
