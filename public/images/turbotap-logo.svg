@@ -1,0 +1,44 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 80" width="320" height="80">
+  <defs>
+    <linearGradient id="tapGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#1E6FE6"/>
+      <stop offset="100%" stop-color="#2DD4BF"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Speed lines (3 lines) -->
+  <g stroke="url(#tapGrad)" stroke-width="4" stroke-linecap="round">
+    <line x1="12" y1="36" x2="32" y2="36"/>
+    <line x1="6" y1="46" x2="32" y2="46"/>
+    <line x1="12" y1="56" x2="32" y2="56"/>
+  </g>
+
+  <!-- Tap handle (top rectangle) -->
+  <rect x="56" y="14" width="30" height="14" rx="4" fill="url(#tapGrad)"/>
+
+  <!-- Tap body (vertical connector) -->
+  <rect x="66" y="26" width="10" height="12" fill="url(#tapGrad)"/>
+
+  <!-- Tap spout (curved main body) -->
+  <path d="M 56 38
+           L 92 38
+           L 92 44
+           A 16 16 0 0 1 76 60
+           L 60 60
+           A 4 4 0 0 1 56 56
+           L 56 42
+           A 4 4 0 0 1 60 38
+           Z"
+        fill="url(#tapGrad)"/>
+
+  <!-- Spout opening (small rectangle at bottom) -->
+  <rect x="62" y="60" width="12" height="8" rx="2" fill="url(#tapGrad)"/>
+
+  <!-- Text: TurboTap -->
+  <text x="110" y="58"
+        font-family="Inter, 'Segoe UI', system-ui, -apple-system, sans-serif"
+        font-weight="700"
+        font-size="42"
+        fill="white"
+        letter-spacing="-0.5">TurboTap</text>
+</svg>

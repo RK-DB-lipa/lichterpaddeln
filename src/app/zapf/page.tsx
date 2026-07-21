@@ -61,7 +61,7 @@ export default function ZapfPage() {
     return (
       <div className="h-screen bg-gray-900 flex items-center justify-center p-4">
         <form onSubmit={handleLogin} className="bg-gray-800 rounded-2xl p-6 w-full max-w-sm shadow-2xl border border-gray-700">
-          <div className="flex items-center gap-3 mb-6"><img src="/images/turbotap-logo.png" alt="TurboTap" className="w-10 h-10 rounded-lg" /><h1 className="text-2xl font-bold text-white">TurboTap · Zapf</h1></div>
+          <div className="flex items-center gap-3 mb-6"><img src="/images/turbotap-logo.svg" alt="TurboTap" className="w-24 h-10" /><h1 className="text-2xl font-bold text-white">TurboTap · Zapf</h1></div>
           {loginError && <div className="bg-red-900/50 text-red-300 text-sm p-3 rounded-lg mb-4 border border-red-700">{loginError}</div>}
           <div className="space-y-4">
             <div><label className="block text-sm text-gray-400 mb-1">Benutzername</label><input type="text" value={loginUsername} onChange={(e) => setLoginUsername(e.target.value)} className="w-full px-4 py-3 rounded-xl bg-gray-700 text-white border border-gray-600 focus:border-blue-500 focus:outline-none" autoFocus /></div>
@@ -79,7 +79,7 @@ export default function ZapfPage() {
     <div className="h-screen flex flex-col bg-gray-900 text-white overflow-hidden select-none">
       <header className="flex items-center justify-between px-3 py-2 bg-gray-800 border-b border-gray-700 shrink-0">
         <div className="flex items-center gap-2">
-          <img src="/images/turbotap-logo.png" alt="" className="w-6 h-6 rounded" />
+          <img src="/images/turbotap-logo.svg" alt="" className="h-8 w-24" />
           <span className="font-bold text-sm md:text-base truncate">Zapfen – {sp?.name || "..."}</span>
         </div>
         <div className="flex items-center gap-2">

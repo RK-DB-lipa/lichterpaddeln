@@ -136,7 +136,7 @@ export default function AdminPage() {
       <div className="min-h-screen bg-gray-900 flex items-center justify-center p-4">
         <form onSubmit={handleLogin} className="bg-gray-800 rounded-2xl p-6 w-full max-w-sm shadow-2xl border border-gray-700">
           <div className="flex items-center gap-3 mb-6">
-            <img src="/images/turbotap-logo.png" alt="TurboTap" className="w-10 h-10 rounded-lg" />
+            <img src="/images/turbotap-logo.svg" alt="TurboTap" className="w-24 h-10" />
             <h1 className="text-2xl font-bold text-white">TurboTap</h1>
           </div>
           {loginError && <div className="bg-red-900/50 text-red-300 text-sm p-3 rounded-lg mb-4 border border-red-700">{loginError}</div>}
@@ -155,7 +155,7 @@ export default function AdminPage() {
     <div className="h-screen bg-gray-900 text-white flex flex-col overflow-hidden">
       <header className="bg-gray-800 border-b border-gray-700 px-4 py-3 flex items-center justify-between shrink-0">
         <div className="flex items-center gap-3 min-w-0">
-          <img src="/images/turbotap-logo.png" alt="" className="w-8 h-8 rounded-lg shrink-0" />
+          <img src="/images/turbotap-logo.svg" alt="" className="h-8 w-24 shrink-0" />
           <h1 className="text-lg font-bold">TurboTap · Admin</h1>
           {session.role === "user" && <span className="text-[10px] bg-purple-700/60 border border-purple-500/40 rounded-full px-2 py-0.5 text-purple-200 truncate">👤 {session.displayName || session.username}</span>}
           {session.displayName?.startsWith("🔐") && <span className="text-[10px] bg-amber-700/60 border border-amber-500/40 rounded-full px-2 py-0.5 text-amber-200 truncate">{session.displayName}</span>}
@@ -319,7 +319,7 @@ export default function AdminPage() {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
           <div className="bg-gray-800 rounded-2xl w-full max-w-md shadow-2xl border border-gray-600 max-h-[90vh] flex flex-col">
             <div className="p-4 border-b border-gray-700 shrink-0">
-              <div className="flex items-center gap-2 mb-1"><img src="/images/turbotap-logo.png" alt="" className="w-6 h-6 rounded" /><h2 className="text-xl font-bold">TurboTap · Rechnung #{orderDetail.order.id}</h2></div>
+              <div className="flex items-center gap-2 mb-1"><img src="/images/turbotap-logo.svg" alt="" className="h-8 w-24" /><h2 className="text-xl font-bold">TurboTap · Rechnung #{orderDetail.order.id}</h2></div>
               <p className="text-xs text-gray-400">{new Date(orderDetail.order.createdAt).toLocaleString("de-DE")} · {getSPName(orderDetail.order.salesPointId)}</p>
               {orderDetail.order.cashierName && <p className="text-xs text-green-400">👤 {orderDetail.order.cashierName}</p>}
             </div>
