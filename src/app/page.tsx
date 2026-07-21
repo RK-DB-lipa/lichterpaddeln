@@ -1,24 +1,13 @@
-"use client";
-
 import { useState, useEffect, useCallback, useRef } from "react";
-
-type Drink = {
-  id: number;
-  name: string;
-  priceNet: number;
-  taxRate: number;
-  hasDeposit: boolean;
-  depositAmount: number;
-  color: string;
-  imageUrl: string | null;
-  priceGross: number;
-  isPourDrink: boolean;
-};
-
-type SalesPoint = {
-  id: number;
-  name: string;
-};
+import type { CupSize, DrinkWithGross, SalesPoint } from "../lib/types";
+import {
+  addCupReturn,
+  addToPourQueue,
+  createOrder,
+  ensureSeeded,
+  getDrinks,
+  getSalesPoints,
+} from "../lib/store";
 
 type OrderItem = {
   drinkId: number;
@@ -28,12 +17,22 @@ type OrderItem = {
   unitDeposit: number;
 };
 
+type HandoutState = {
+  orderId: number;
+  salesPointName: string;
+  items: Array<OrderItem & { isPourDrink: boolean }>;
+  checked: Record<number, boolean>;
+  totalGross: number;
+  depositReturnedCount: number;
+};
+
 export default function POSPage() {
-  const [drinks, setDrinks] = useState<Drink[]>([]);
+  const [drinks, setDrinks] = useState<DrinkWithGross[]>([]);
   const [salesPoints, setSalesPoints] = useState<SalesPoint[]>([]);
   const [selectedSalesPointId, setSelectedSalesPointId] = useState<number | null>(null);
   const [orderItems, setOrderItems] = useState<Map<number, OrderItem>>(new Map());
-  const [depositReturned, setDepositReturned] = useState(0);
+  const [depositReturned02, setDepositReturned02] = useState(0);
+  const [depositReturned04, setDepositReturned04] = useState(0);
   const [showResetConfirm, setShowResetConfirm] = useState(false);
   const [showCancelConfirm, setShowCancelConfirm] = useState(false);
   const [showSuccess, setShowSuccess] = useState(false);
@@ -45,6 +44,7 @@ export default function POSPage() {
     orderId: number;
     totalGross: number;
   } | null>(null);
+  const [handout, setHandout] = useState<HandoutState | null>(null);
 
   // Receipt panel state
   const [receiptMinimized, setReceiptMinimized] = useState(false);
@@ -53,7 +53,7 @@ export default function POSPage() {
   const dragOffset = useRef({ x: 0, y: 0 });
   const receiptRef = useRef<HTMLDivElement>(null);
 
-  const wakeLockRef = useRef<WakeLockSentinel | null>(null);
+  const wakeLockRef = useRef<any>(null);
 
   // Wake Lock
   useEffect(() => {
@@ -74,7 +74,7 @@ export default function POSPage() {
     document.addEventListener("visibilitychange", handleVisibility);
     return () => {
       document.removeEventListener("visibilitychange", handleVisibility);
-      wakeLockRef.current?.release().catch(() => {});
+      wakeLockRef.current?.release?.().catch?.(() => {});
     };
   }, []);
 
@@ -90,42 +90,34 @@ export default function POSPage() {
   }, [selectedSalesPointId]);
 
   useEffect(() => {
+    // mirrors POST /api/admin/setup on startup
+    ensureSeeded();
     fetchDrinks();
     fetchSalesPoints();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  useEffect(() => {
-    fetch("/api/admin/setup", { method: "POST" }).then(() => {
-      fetchDrinks();
-      fetchSalesPoints();
-    });
-  }, []);
-
-  async function fetchDrinks() {
+  function fetchDrinks() {
     try {
-      const res = await fetch("/api/drinks");
-      if (res.ok) setDrinks(await res.json());
+      setDrinks(getDrinks());
     } catch (err) {
       console.error(err);
     }
   }
 
-  async function fetchSalesPoints() {
+  function fetchSalesPoints() {
     try {
-      const res = await fetch("/api/sales-points");
-      if (res.ok) {
-        const data = await res.json();
-        setSalesPoints(data);
-        if (data.length > 0 && selectedSalesPointId === null) {
-          setSelectedSalesPointId(data[0].id);
-        }
+      const data = getSalesPoints();
+      setSalesPoints(data);
+      if (data.length > 0 && selectedSalesPointId === null) {
+        setSelectedSalesPointId(data[0].id);
       }
     } catch (err) {
       console.error(err);
     }
   }
 
-  const addDrink = useCallback((drink: Drink) => {
+  const addDrink = useCallback((drink: DrinkWithGross) => {
     setPourSent(false);
     setOrderItems((prev) => {
       const next = new Map(prev);
@@ -145,10 +137,17 @@ export default function POSPage() {
     });
   }, []);
 
-  const addDepositReturn = useCallback((count: number) => {
-    setOrderItems((prev) => new Map(prev));
-    setDepositReturned((prev) => prev + count);
-  }, []);
+  const addDepositReturn = useCallback(
+    (size: CupSize, count: number) => {
+      // Cups are physically taken back right now -> count them immediately
+      if (selectedSalesPointId) {
+        addCupReturn(selectedSalesPointId, size, count);
+      }
+      if (size === "02") setDepositReturned02((prev) => prev + count);
+      else setDepositReturned04((prev) => prev + count);
+    },
+    [selectedSalesPointId]
+  );
 
   const removeItem = useCallback((drinkId: number) => {
     setOrderItems((prev) => {
@@ -158,24 +157,28 @@ export default function POSPage() {
     });
   }, []);
 
-  const updateItemQuantity = useCallback((drinkId: number, newQty: number) => {
-    if (newQty < 1) {
-      removeItem(drinkId);
-      return;
-    }
-    setOrderItems((prev) => {
-      const next = new Map(prev);
-      const existing = next.get(drinkId);
-      if (existing) {
-        next.set(drinkId, { ...existing, quantity: newQty });
+  const updateItemQuantity = useCallback(
+    (drinkId: number, newQty: number) => {
+      if (newQty < 1) {
+        removeItem(drinkId);
+        return;
       }
-      return next;
-    });
-  }, [removeItem]);
+      setOrderItems((prev) => {
+        const next = new Map(prev);
+        const existing = next.get(drinkId);
+        if (existing) {
+          next.set(drinkId, { ...existing, quantity: newQty });
+        }
+        return next;
+      });
+    },
+    [removeItem]
+  );
 
   const cancelOrder = useCallback(() => {
     setOrderItems(new Map());
-    setDepositReturned(0);
+    setDepositReturned02(0);
+    setDepositReturned04(0);
     setPourSent(false);
     setShowCancelConfirm(false);
   }, []);
@@ -189,21 +192,23 @@ export default function POSPage() {
     (sum, item) => sum + item.unitDeposit * item.quantity,
     0
   );
+  const depositReturned = depositReturned02 + depositReturned04;
   const totalDepositReturn = depositReturned * 2;
   const netDeposit = totalDepositCharged - totalDepositReturn;
   const grandTotal = totalDrinkGross + netDeposit;
   const hasItems = items.length > 0 || depositReturned > 0;
   const totalDrinksCount = items.reduce((sum, item) => sum + item.quantity, 0);
 
-  const hasPourDrinks = items.some((item) => {
-    const drink = drinks.find((d) => d.id === item.drinkId);
-    return drink?.isPourDrink;
-  });
+  const pourItemCount = items
+    .filter((item) => drinks.find((d) => d.id === item.drinkId)?.isPourDrink)
+    .reduce((sum, item) => sum + item.quantity, 0);
+
+  const hasPourDrinks = pourItemCount > 0;
 
   const selectedSalesPoint = salesPoints.find((sp) => sp.id === selectedSalesPointId);
 
-  const sendToPour = useCallback(async () => {
-    if (!selectedSalesPointId) return;
+  const sendToPour = useCallback(() => {
+    if (!selectedSalesPointId || pourSent) return;
     const pourItems = items
       .filter((item) => {
         const drink = drinks.find((d) => d.id === item.drinkId);
@@ -214,54 +219,52 @@ export default function POSPage() {
     if (pourItems.length === 0) return;
 
     try {
-      const res = await fetch("/api/pour/queue", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          salesPointId: selectedSalesPointId,
-          items: pourItems,
-        }),
-      });
-      if (res.ok) {
-        setPourSent(true);
-        setTimeout(() => setPourSent(false), 2000);
-      }
+      addToPourQueue(selectedSalesPointId, pourItems);
+      // stays green with a check until the order changes / completes
+      setPourSent(true);
     } catch (err) {
       console.error(err);
     }
-  }, [items, drinks, selectedSalesPointId]);
+  }, [items, drinks, selectedSalesPointId, pourSent]);
 
-  const handleReset = useCallback(async () => {
+  const handleReset = useCallback(() => {
     if (!selectedSalesPointId) return;
     if (items.length > 0) {
       try {
-        const res = await fetch("/api/orders", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            items: items.map((item) => ({
-              drinkId: item.drinkId,
-              quantity: item.quantity,
-            })),
-            depositReturned,
-            salesPointId: selectedSalesPointId,
-          }),
+        const data = createOrder({
+          items: items.map((item) => ({
+            drinkId: item.drinkId,
+            quantity: item.quantity,
+          })),
+          depositReturned,
+          salesPointId: selectedSalesPointId,
         });
-        if (res.ok) {
-          const data = await res.json();
-          setLastOrder({ orderId: data.orderId, totalGross: grandTotal });
-          setShowSuccess(true);
-          setTimeout(() => setShowSuccess(false), 3000);
-        }
+        setLastOrder({ orderId: data.orderId, totalGross: grandTotal });
+        setShowSuccess(true);
+        setTimeout(() => setShowSuccess(false), 3000);
+
+        // Handout checklist for the service staff – blocks new orders until done
+        setHandout({
+          orderId: data.orderId,
+          salesPointName: selectedSalesPoint?.name || "",
+          items: items.map((item) => ({
+            ...item,
+            isPourDrink: drinks.find((d) => d.id === item.drinkId)?.isPourDrink ?? false,
+          })),
+          checked: {},
+          totalGross: grandTotal,
+          depositReturnedCount: depositReturned,
+        });
       } catch (err) {
         console.error("Failed to save order:", err);
       }
     }
     setOrderItems(new Map());
-    setDepositReturned(0);
+    setDepositReturned02(0);
+    setDepositReturned04(0);
     setPourSent(false);
     setShowResetConfirm(false);
-  }, [items, depositReturned, grandTotal, selectedSalesPointId]);
+  }, [items, depositReturned, grandTotal, selectedSalesPointId, selectedSalesPoint, drinks]);
 
   // Drag handlers for receipt
   const handleDragStart = (e: React.MouseEvent | React.TouchEvent) => {
@@ -308,6 +311,11 @@ export default function POSPage() {
     }
   }, [isDragging, handleDragMove, handleDragEnd]);
 
+  const handoutCheckedCount = handout
+    ? handout.items.filter((i) => handout.checked[i.drinkId]).length
+    : 0;
+  const handoutAllDone = handout !== null && handoutCheckedCount === handout.items.length;
+
   return (
     <div className="h-screen flex flex-col bg-gray-900 text-white overflow-hidden">
       {/* Header */}
@@ -319,6 +327,14 @@ export default function POSPage() {
           </span>
         </div>
         <div className="flex items-center gap-2">
+          {/* Switch to tap view */}
+          <a
+            href="#/zapf"
+            className="text-xs bg-gray-700 hover:bg-gray-600 rounded-lg px-2 py-1 border border-gray-600 font-bold transition-colors"
+            title="Zur Zapfansicht wechseln"
+          >
+            🍺 Zapf
+          </a>
           <select
             value={selectedSalesPointId ?? ""}
             onChange={(e) => setSelectedSalesPointId(parseInt(e.target.value))}
@@ -343,14 +359,36 @@ export default function POSPage() {
         {/* Deposit return buttons + cancel - always on top */}
         <aside className="w-14 md:w-16 shrink-0 bg-gray-800/90 border-r border-gray-700 flex flex-col items-center py-1.5 gap-1 overflow-y-auto z-30">
           <div className="text-[9px] text-gray-400 font-bold text-center mb-0.5 leading-tight">
-            Pfand<br />zurück
+            Pfand
+            <br />
+            zurück
           </div>
-          {[1, 2, 3, 4, 5].map((n) => (
+          <div className="text-[9px] text-amber-400 font-extrabold text-center leading-tight">
+            0,2 l
+          </div>
+          {[1, 2, 3].map((n) => (
             <button
-              key={n}
-              onClick={() => addDepositReturn(n)}
+              key={`02-${n}`}
+              onClick={() => addDepositReturn("02", n)}
               className="w-10 h-10 md:w-11 md:h-11 rounded-lg font-bold text-xs md:text-sm
                 bg-amber-600 hover:bg-amber-500 active:bg-amber-700
+                active:scale-95 transition-all shadow-md
+                flex flex-col items-center justify-center leading-tight"
+            >
+              <span>-{n * 2}€</span>
+              <span className="text-[8px] opacity-80">{n}×</span>
+            </button>
+          ))}
+          <div className="w-full border-t border-gray-600 my-0.5" />
+          <div className="text-[9px] text-amber-400 font-extrabold text-center leading-tight">
+            0,4 l
+          </div>
+          {[1, 2, 3].map((n) => (
+            <button
+              key={`04-${n}`}
+              onClick={() => addDepositReturn("04", n)}
+              className="w-10 h-10 md:w-11 md:h-11 rounded-lg font-bold text-xs md:text-sm
+                bg-amber-700 hover:bg-amber-600 active:bg-amber-800
                 active:scale-95 transition-all shadow-md
                 flex flex-col items-center justify-center leading-tight"
             >
@@ -369,7 +407,8 @@ export default function POSPage() {
                   flex items-center justify-center leading-tight z-50"
                 title="Bestellung abbrechen"
               >
-                ✕<br />Abbr.
+                ✕<br />
+                Abbr.
               </button>
             </>
           )}
@@ -381,7 +420,7 @@ export default function POSPage() {
             <div className="flex items-center justify-center h-full text-gray-500">
               <div className="text-center">
                 <p className="text-lg mb-2">Keine Getränke verfügbar</p>
-                <a href="/admin" className="text-blue-400 underline text-sm">
+                <a href="#/admin" className="text-blue-400 underline text-sm">
                   Im Admin-Bereich konfigurieren
                 </a>
               </div>
@@ -424,9 +463,7 @@ export default function POSPage() {
                           + {drink.depositAmount.toFixed(2)} € Pfand
                         </div>
                       )}
-                      <div className="text-[9px] opacity-60 mt-0.5">
-                        {drink.taxRate}% MwSt.
-                      </div>
+                      <div className="text-[9px] opacity-60 mt-0.5">{drink.taxRate}% MwSt.</div>
                     </div>
                   </button>
                 );
@@ -516,13 +553,21 @@ export default function POSPage() {
                   {totalDepositCharged > 0 && (
                     <div className="flex justify-between items-baseline text-sm md:text-base py-1 text-amber-400">
                       <span>Pfand (behalten)</span>
-                      <span className="tabular-nums font-semibold">+{totalDepositCharged.toFixed(2)} €</span>
+                      <span className="tabular-nums font-semibold">
+                        +{totalDepositCharged.toFixed(2)} €
+                      </span>
                     </div>
                   )}
                   {depositReturned > 0 && (
                     <div className="flex justify-between items-baseline text-sm md:text-base py-1 text-red-400">
-                      <span>Pfand zurück ({depositReturned})</span>
-                      <span className="tabular-nums font-semibold">-{totalDepositReturn.toFixed(2)} €</span>
+                      <span>
+                        Pfand zurück ({depositReturned02 > 0 && `${depositReturned02}× 0,2l`}
+                        {depositReturned02 > 0 && depositReturned04 > 0 && " + "}
+                        {depositReturned04 > 0 && `${depositReturned04}× 0,4l`})
+                      </span>
+                      <span className="tabular-nums font-semibold">
+                        -{totalDepositReturn.toFixed(2)} €
+                      </span>
                     </div>
                   )}
                 </div>
@@ -532,7 +577,9 @@ export default function POSPage() {
                   <div className="flex justify-between items-center text-sm md:text-base">
                     <span className="text-gray-300">
                       Getränke:{" "}
-                      <span className="tabular-nums font-bold">{totalDrinkGross.toFixed(2)} €</span>
+                      <span className="tabular-nums font-bold">
+                        {totalDrinkGross.toFixed(2)} €
+                      </span>
                     </span>
                     {netDeposit !== 0 && (
                       <span className="text-amber-400 text-xs md:text-sm">
@@ -554,10 +601,12 @@ export default function POSPage() {
                     <button
                       onClick={sendToPour}
                       className={`w-12 h-12 rounded-full font-bold text-xs shrink-0 flex flex-col items-center justify-center transition-all shadow-lg ${
-                        pourSent ? "bg-green-500" : "bg-orange-600 hover:bg-orange-500 active:bg-orange-700"
+                        pourSent
+                          ? "bg-green-500"
+                          : "bg-orange-600 hover:bg-orange-500 active:bg-orange-700"
                       } active:scale-95 border-2 border-white/20`}
                     >
-                      <span className="text-base">🍺</span>
+                      <span className="text-base">{pourSent ? "✓" : "🍺"}</span>
                       <span className="text-[8px]">{pourSent ? "OK!" : "Zapf"}</span>
                     </button>
                   )}
@@ -608,6 +657,21 @@ export default function POSPage() {
                 {totalDrinksCount} Getränke · {items.length} Positionen
               </p>
             </div>
+            {hasPourDrinks && (
+              <button
+                onClick={sendToPour}
+                disabled={pourSent}
+                className={`w-full mb-3 py-2.5 rounded-lg text-sm font-bold border transition-all active:scale-[0.98] ${
+                  pourSent
+                    ? "bg-green-600 border-green-400 text-white cursor-default"
+                    : "bg-orange-600 hover:bg-orange-500 border-orange-400/40 text-white"
+                }`}
+              >
+                {pourSent
+                  ? "✓ An Zapfanlage gesendet"
+                  : `🍺 ${pourItemCount}× an Zapfanlage senden`}
+              </button>
+            )}
             <button
               onClick={() => setShowCalculator(true)}
               className="w-full mb-3 py-2 rounded-lg bg-blue-700/50 hover:bg-blue-600/50 text-blue-300 text-sm font-medium border border-blue-600/30 transition-all"
@@ -712,9 +776,124 @@ export default function POSPage() {
         </div>
       )}
 
-      {showSuccess && lastOrder && (
+      {showSuccess && lastOrder && !handout && (
         <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 bg-green-700 text-white px-5 py-2.5 rounded-xl shadow-2xl font-bold text-sm animate-bounce">
           ✅ Bestellung #{lastOrder.orderId} gespeichert – {lastOrder.totalGross.toFixed(2)} €
+        </div>
+      )}
+
+      {/* Handout checklist – blocks new orders until everything is served */}
+      {handout && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-gray-900/95 p-4">
+          <div className="bg-gray-800 rounded-2xl w-full max-w-md shadow-2xl border border-gray-600 max-h-[92vh] flex flex-col">
+            <div className="p-4 border-b border-gray-700 shrink-0">
+              <h2 className="text-xl font-extrabold text-center">
+                🥤 Ausgabe – Bestellung #{handout.orderId}
+              </h2>
+              <p className="text-xs text-gray-400 text-center mt-1">
+                {handout.salesPointName} · kassiert:{" "}
+                <span className="text-green-400 font-bold tabular-nums">
+                  {handout.totalGross.toFixed(2)} €
+                </span>
+                {handout.depositReturnedCount > 0 && (
+                  <span className="text-amber-400">
+                    {" "}
+                    · {handout.depositReturnedCount} Becher zurückgenommen
+                  </span>
+                )}
+              </p>
+              <p className="text-[11px] text-gray-500 text-center mt-1">
+                Getränke zum Abhaken antippen – erst danach geht es weiter
+              </p>
+            </div>
+            <div className="flex-1 overflow-y-auto p-3 space-y-2">
+              {handout.items.map((item) => {
+                const done = !!handout.checked[item.drinkId];
+                const drinkColor =
+                  drinks.find((d) => d.id === item.drinkId)?.color || "#6B7280";
+                return (
+                  <button
+                    key={item.drinkId}
+                    onClick={() =>
+                      setHandout((h) =>
+                        h
+                          ? {
+                              ...h,
+                              checked: {
+                                ...h.checked,
+                                [item.drinkId]: !h.checked[item.drinkId],
+                              },
+                            }
+                          : h
+                      )
+                    }
+                    className={`w-full flex items-center gap-3 rounded-xl border-2 px-3 py-3 text-left transition-all active:scale-[0.98] ${
+                      done
+                        ? "bg-green-900/40 border-green-500"
+                        : "bg-gray-700/50 border-gray-600 hover:border-gray-400"
+                    }`}
+                  >
+                    <span
+                      className="w-4 h-4 rounded-full shrink-0 border border-white/30"
+                      style={{ backgroundColor: drinkColor }}
+                    />
+                    <span
+                      className={`flex-1 font-bold text-base md:text-lg ${
+                        done ? "line-through text-gray-400" : ""
+                      }`}
+                    >
+                      {item.quantity}× {item.drinkName}
+                      {item.isPourDrink && (
+                        <span className="ml-2 text-[10px] bg-orange-600 px-1.5 py-0.5 rounded text-white font-extrabold align-middle">
+                          ZAPF
+                        </span>
+                      )}
+                    </span>
+                    <span
+                      className={`w-8 h-8 rounded-full flex items-center justify-center text-lg font-black shrink-0 ${
+                        done ? "bg-green-500 text-white" : "bg-gray-600 text-gray-400"
+                      }`}
+                    >
+                      ✓
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+            <div className="p-4 border-t border-gray-700 shrink-0">
+              <div className="flex items-center justify-between text-xs text-gray-400 mb-2">
+                <span>
+                  {handoutCheckedCount} / {handout.items.length} ausgegeben
+                </span>
+                <span>{handoutAllDone ? "✅ Komplett" : "Noch offen"}</span>
+              </div>
+              <div className="w-full h-2 rounded-full bg-gray-700 mb-3 overflow-hidden">
+                <div
+                  className="h-full bg-green-500 transition-all"
+                  style={{
+                    width: `${
+                      handout.items.length > 0
+                        ? (handoutCheckedCount / handout.items.length) * 100
+                        : 0
+                    }%`,
+                  }}
+                />
+              </div>
+              <button
+                onClick={() => setHandout(null)}
+                disabled={!handoutAllDone}
+                className={`w-full py-3 rounded-xl font-bold text-sm md:text-base transition-all active:scale-[0.98] ${
+                  handoutAllDone
+                    ? "bg-green-600 hover:bg-green-500 border border-green-400/30"
+                    : "bg-gray-700 text-gray-500 cursor-not-allowed"
+                }`}
+              >
+                {handoutAllDone
+                  ? "✅ Ausgabe abgeschlossen – neue Bestellung"
+                  : "Erst alle Getränke abhaken"}
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>

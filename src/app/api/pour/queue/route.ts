@@ -1,20 +1,25 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
 import { pourQueue } from "@/db/schema";
+import { getSession } from "@/lib/auth";
 import { eq, and } from "drizzle-orm";
 
-// GET: Get pending pour counts for a sales point
 export async function GET(req: NextRequest) {
   try {
+    const session = await getSession();
+    const tenantId = session?.tenantId ?? 0;
     const url = new URL(req.url);
     const salesPointId = url.searchParams.get("salesPointId");
     if (!salesPointId) {
       return NextResponse.json({ error: "salesPointId required" }, { status: 400 });
     }
+
     const queue = await db
       .select()
       .from(pourQueue)
-      .where(eq(pourQueue.salesPointId, parseInt(salesPointId)));
+      .where(
+        and(eq(pourQueue.tenantId, tenantId), eq(pourQueue.salesPointId, parseInt(salesPointId)))
+      );
     return NextResponse.json(queue);
   } catch (error) {
     console.error("GET /api/pour/queue error:", error);
@@ -22,9 +27,10 @@ export async function GET(req: NextRequest) {
   }
 }
 
-// POST: Add items to pour queue (from POS)
 export async function POST(req: NextRequest) {
   try {
+    const session = await getSession();
+    const tenantId = session?.tenantId ?? 0;
     const body = await req.json();
     const { salesPointId, items } = body;
     if (!salesPointId || !items || !Array.isArray(items)) {
@@ -37,6 +43,7 @@ export async function POST(req: NextRequest) {
         .from(pourQueue)
         .where(
           and(
+            eq(pourQueue.tenantId, tenantId),
             eq(pourQueue.salesPointId, parseInt(salesPointId)),
             eq(pourQueue.drinkName, item.drinkName)
           )
@@ -50,6 +57,7 @@ export async function POST(req: NextRequest) {
           .where(eq(pourQueue.id, existing[0].id));
       } else {
         await db.insert(pourQueue).values({
+          tenantId,
           salesPointId: parseInt(salesPointId),
           drinkName: item.drinkName,
           pendingCount: item.quantity,

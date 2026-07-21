@@ -1,28 +1,13 @@
-"use client";
-
 import { useState, useEffect, useCallback } from "react";
-
-type SalesPoint = {
-  id: number;
-  name: string;
-};
-
-type Drink = {
-  id: number;
-  name: string;
-  isPourDrink: boolean;
-};
-
-type QueueItem = {
-  id: number;
-  drinkName: string;
-  pendingCount: number;
-};
-
-type StatItem = {
-  drinkName: string;
-  totalPoured: number;
-};
+import type { PourQueueItem, SalesPoint } from "../lib/types";
+import {
+  completePour,
+  ensureSeeded,
+  getDrinks,
+  getPourQueue,
+  getPourStats,
+  getSalesPoints,
+} from "../lib/store";
 
 // Default explicit list of pour drinks
 const DEFAULT_POUR_BUTTONS = ["Bier", "Radler", "Glühwein"];
@@ -31,16 +16,18 @@ export default function ZapfPage() {
   const [salesPoints, setSalesPoints] = useState<SalesPoint[]>([]);
   const [selectedSalesPointId, setSelectedSalesPointId] = useState<number | null>(null);
   const [buttonList, setButtonList] = useState<string[]>(DEFAULT_POUR_BUTTONS);
-  const [rawQueue, setRawQueue] = useState<QueueItem[]>([]);
+  const [rawQueue, setRawQueue] = useState<PourQueueItem[]>([]);
   const [stats, setStats] = useState<Map<string, number>>(new Map());
   const [lastAction, setLastAction] = useState<string | null>(null);
 
   useEffect(() => {
+    ensureSeeded();
     const saved = localStorage.getItem("zapfSalesPointId");
     if (saved) setSelectedSalesPointId(parseInt(saved));
     fetchSalesPoints();
     fetchDrinks();
     fetchStats();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
@@ -48,6 +35,7 @@ export default function ZapfPage() {
       localStorage.setItem("zapfSalesPointId", selectedSalesPointId.toString());
       fetchQueue();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedSalesPointId]);
 
   // Fast polling every 1 second
@@ -58,75 +46,63 @@ export default function ZapfPage() {
       fetchStats();
     }, 1000);
     return () => clearInterval(interval);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedSalesPointId]);
 
-  async function fetchSalesPoints() {
+  function fetchSalesPoints() {
     try {
-      const res = await fetch("/api/sales-points");
-      if (res.ok) {
-        const data = await res.json();
-        setSalesPoints(data);
-        if (data.length > 0 && selectedSalesPointId === null) {
-          setSelectedSalesPointId(data[0].id);
-        }
+      const data = getSalesPoints();
+      setSalesPoints(data);
+      if (data.length > 0 && selectedSalesPointId === null) {
+        setSelectedSalesPointId(data[0].id);
       }
     } catch (err) {
       console.error(err);
     }
   }
 
-  async function fetchDrinks() {
+  function fetchDrinks() {
     try {
-      const res = await fetch("/api/drinks");
-      if (res.ok) {
-        const data: Drink[] = await res.json();
-        const dbPourNames = data.filter((d) => d.isPourDrink).map((d) => d.name);
-        
-        // Build unique button list incorporating Bier, Radler, Glühwein + any custom DB pour drinks
-        const combined = new Set<string>();
-        
-        // Always include separate Bier, Radler, Glühwein
-        combined.add("Bier");
-        combined.add("Radler");
-        combined.add("Glühwein");
+      const data = getDrinks();
+      const dbPourNames = data.filter((d) => d.isPourDrink).map((d) => d.name);
 
-        // Add any other pour drinks from DB that aren't combined "Bier/Radler"
-        dbPourNames.forEach((name) => {
-          if (name.toLowerCase() !== "bier/radler") {
-            combined.add(name);
-          }
-        });
+      // Build unique button list incorporating Bier, Radler, Glühwein + any custom DB pour drinks
+      const combined = new Set<string>();
 
-        setButtonList(Array.from(combined));
-      }
+      // Always include separate Bier, Radler, Glühwein
+      combined.add("Bier");
+      combined.add("Radler");
+      combined.add("Glühwein");
+
+      // Add any other pour drinks from DB that aren't combined "Bier/Radler"
+      dbPourNames.forEach((name) => {
+        if (name.toLowerCase() !== "bier/radler") {
+          combined.add(name);
+        }
+      });
+
+      setButtonList(Array.from(combined));
     } catch (err) {
       console.error(err);
       setButtonList(["Bier", "Radler", "Glühwein"]);
     }
   }
 
-  async function fetchQueue() {
+  function fetchQueue() {
     if (!selectedSalesPointId) return;
     try {
-      const res = await fetch(`/api/pour/queue?salesPointId=${selectedSalesPointId}`);
-      if (res.ok) {
-        const data: QueueItem[] = await res.json();
-        setRawQueue(data);
-      }
+      setRawQueue(getPourQueue(selectedSalesPointId));
     } catch (err) {
       console.error(err);
     }
   }
 
-  async function fetchStats() {
+  function fetchStats() {
     try {
-      const res = await fetch("/api/pour/stats");
-      if (res.ok) {
-        const data: StatItem[] = await res.json();
-        const map = new Map<string, number>();
-        data.forEach((item) => map.set(item.drinkName, item.totalPoured));
-        setStats(map);
-      }
+      const data = getPourStats();
+      const map = new Map<string, number>();
+      data.forEach((item) => map.set(item.drinkName, item.totalPoured));
+      setStats(map);
     } catch (err) {
       console.error(err);
     }
@@ -143,7 +119,7 @@ export default function ZapfPage() {
       // Exact match (e.g. "Bier" == "Bier", "Radler" == "Radler")
       if (qLower === btnLower) {
         count += q.pendingCount;
-      } 
+      }
       // If queue item is "Bier/Radler", split or count for both Bier and Radler
       else if (qLower.includes("bier/radler") || qLower.includes("bier / radler")) {
         if (btnLower === "bier" || btnLower === "radler") {
@@ -177,7 +153,7 @@ export default function ZapfPage() {
   };
 
   const handleComplete = useCallback(
-    async (drinkName: string) => {
+    (drinkName: string) => {
       if (!selectedSalesPointId) return;
 
       // Optimistic update
@@ -199,16 +175,10 @@ export default function ZapfPage() {
       );
 
       try {
-        const res = await fetch("/api/pour/complete", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            salesPointId: selectedSalesPointId,
-            drinkName,
-          }),
-        });
+        // Mirrors POST /api/pour/complete – the backend matches the drink name exactly
+        const ok = completePour(selectedSalesPointId, drinkName);
 
-        if (res.ok) {
+        if (ok) {
           setLastAction(`${drinkName} gezapft`);
           setTimeout(() => setLastAction(null), 1200);
           fetchQueue();
@@ -221,6 +191,7 @@ export default function ZapfPage() {
         fetchQueue();
       }
     },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     [selectedSalesPointId]
   );
 
@@ -248,8 +219,12 @@ export default function ZapfPage() {
               </option>
             ))}
           </select>
-          <a href="/" className="text-xs text-blue-400 hover:underline ml-1">
-            Kasse
+          <a
+            href="#/"
+            className="text-xs bg-gray-700 hover:bg-gray-600 rounded-lg px-2 py-1 border border-gray-600 font-bold transition-colors ml-1"
+            title="Zur Kassenansicht wechseln"
+          >
+            🧾 Kasse
           </a>
         </div>
       </header>
@@ -278,7 +253,9 @@ export default function ZapfPage() {
                   ${count > 0 ? "bg-red-600 border-red-400 animate-pulse scale-105" : "bg-red-900/40 border-red-800/60 opacity-80"}
                 `}
               >
-                <span className="text-xs md:text-sm font-extrabold truncate w-full leading-tight">{drink}</span>
+                <span className="text-xs md:text-sm font-extrabold truncate w-full leading-tight">
+                  {drink}
+                </span>
                 <span className="text-3xl md:text-5xl font-black mt-0.5">{count}</span>
               </div>
             );
@@ -303,7 +280,9 @@ export default function ZapfPage() {
                   ${pending === 0 ? "opacity-75 hover:opacity-100" : "ring-2 ring-green-300"}
                 `}
               >
-                <span className="text-xs md:text-sm font-extrabold truncate w-full leading-tight">{drink}</span>
+                <span className="text-xs md:text-sm font-extrabold truncate w-full leading-tight">
+                  {drink}
+                </span>
                 <span className="text-3xl md:text-5xl font-black mt-0.5">{count}</span>
                 <span className="text-[9px] md:text-[10px] opacity-80">Tippen zum Abhaken</span>
               </button>

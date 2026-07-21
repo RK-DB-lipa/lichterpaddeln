@@ -1,60 +1,59 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
 import { salesPoints } from "@/db/schema";
-import { getAuthAdmin } from "@/lib/auth";
-import { eq, asc } from "drizzle-orm";
+import { getSession, getAuthAdmin } from "@/lib/auth";
+import { eq, and, asc } from "drizzle-orm";
 
-// GET: Public - list active sales points
 export async function GET() {
   try {
+    const session = await getSession();
+    const tenantId = session?.tenantId ?? 0;
+
     const points = await db
       .select()
       .from(salesPoints)
-      .where(eq(salesPoints.isActive, true))
+      .where(and(eq(salesPoints.tenantId, tenantId), eq(salesPoints.isActive, true)))
       .orderBy(asc(salesPoints.sortOrder));
+
     return NextResponse.json(points);
   } catch (error) {
     console.error("GET /api/sales-points error:", error);
-    return NextResponse.json(
-      { error: "Interner Serverfehler" },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: "Interner Serverfehler" }, { status: 500 });
   }
 }
 
-// POST: Admin only - create a sales point
 export async function POST(req: NextRequest) {
   try {
     const admin = await getAuthAdmin();
     if (!admin) {
       return NextResponse.json({ error: "Nicht autorisiert" }, { status: 401 });
     }
+    const session = await getSession();
+    const tenantId = session?.tenantId ?? 0;
 
     const body = await req.json();
-    const { name, sortOrder } = body;
-
+    const { name } = body;
     if (!name) {
-      return NextResponse.json(
-        { error: "Name ist erforderlich" },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: "Name ist erforderlich" }, { status: 400 });
     }
 
-    const existing = await db.select().from(salesPoints);
+    const existing = await db
+      .select()
+      .from(salesPoints)
+      .where(eq(salesPoints.tenantId, tenantId));
+
     const [point] = await db
       .insert(salesPoints)
       .values({
+        tenantId,
         name,
-        sortOrder: sortOrder !== undefined ? parseInt(sortOrder) : existing.length,
+        sortOrder: existing.length,
       })
       .returning();
 
     return NextResponse.json(point, { status: 201 });
   } catch (error) {
     console.error("POST /api/sales-points error:", error);
-    return NextResponse.json(
-      { error: "Interner Serverfehler" },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: "Interner Serverfehler" }, { status: 500 });
   }
 }
