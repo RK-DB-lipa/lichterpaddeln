@@ -99,6 +99,7 @@ export const cupCounters = pgTable("cup_counters", {
   salesPointId: integer("sales_point_id").notNull(),
   size: varchar("size", { length: 10 }).notNull(),
   given: integer("given").notNull().default(0),
+  returned: integer("returned").notNull().default(0),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 

@@ -1,4 +1,3 @@
-
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
 import { pourQueue, pourStats } from "@/db/schema";
@@ -8,7 +7,8 @@ import { eq, and } from "drizzle-orm";
 export async function POST(req: NextRequest) {
   try {
     const session = await getSession();
-    const tenantId = session?.tenantId ?? 0;
+    if (!session) return NextResponse.json({ error: "Nicht autorisiert" }, { status: 401 });
+    const tenantId = session.tenantId;
     const body = await req.json();
     const { salesPointId, drinkName } = body;
     if (!salesPointId || !drinkName) return NextResponse.json({ error: "Ungültige Daten" }, { status: 400 });

@@ -23,6 +23,7 @@ const STATEMENTS = [
     given integer NOT NULL DEFAULT 0, created_at timestamp NOT NULL DEFAULT now()
   )`,
   `CREATE UNIQUE INDEX IF NOT EXISTS cup_counters_unique ON cup_counters (tenant_id, sales_point_id, size)`,
+  `ALTER TABLE cup_counters ADD COLUMN IF NOT EXISTS returned integer NOT NULL DEFAULT 0`,
 
   // --- NEU: Bruttopreis statt Nettopreis ---
   `ALTER TABLE drinks ADD COLUMN IF NOT EXISTS price_gross real`,

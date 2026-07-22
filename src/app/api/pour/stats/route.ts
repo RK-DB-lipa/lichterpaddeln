@@ -7,7 +7,8 @@ import { eq, desc, and, sql } from "drizzle-orm";
 export async function GET(req: NextRequest) {
   try {
     const session = await getSession();
-    const tenantId = session?.tenantId ?? 0;
+    if (!session) return NextResponse.json({ error: "Nicht autorisiert" }, { status: 401 });
+    const tenantId = session.tenantId;
     const url = new URL(req.url);
     const salesPointId = url.searchParams.get("salesPointId");
     const pourerName = url.searchParams.get("pourerName");

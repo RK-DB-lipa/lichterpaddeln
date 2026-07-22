@@ -34,11 +34,22 @@ export default function ZapfPage() {
     if (!session?.authenticated) return;
     const saved = localStorage.getItem("zapfSalesPointId");
     if (saved) setSelectedSalesPointId(parseInt(saved));
-    fetchSalesPoints(); fetchDrinks(); fetchStats();
+    fetchSalesPoints();
+    fetchDrinks();
+    fetchStats();
   }, [session?.authenticated]);
 
-  useEffect(() => { if (selectedSalesPointId !== null) { localStorage.setItem("zapfSalesPointId", selectedSalesPointId.toString()); fetchQueue(); } }, [selectedSalesPointId]);
-  useEffect(() => { if (!selectedSalesPointId) return; const i = setInterval(() => { fetchQueue(); fetchStats(); }, 1000); return () => clearInterval(i); }, [selectedSalesPointId]);
+  useEffect(() => {
+    if (!session?.authenticated || selectedSalesPointId === null) return;
+    localStorage.setItem("zapfSalesPointId", selectedSalesPointId.toString());
+    fetchQueue();
+  }, [session?.authenticated, selectedSalesPointId]);
+
+  useEffect(() => {
+    if (!session?.authenticated || !selectedSalesPointId) return;
+    const i = setInterval(() => { fetchQueue(); fetchStats(); }, 1000);
+    return () => clearInterval(i);
+  }, [session?.authenticated, selectedSalesPointId]);
 
   async function fetchSalesPoints() { try { const r = await fetch("/api/sales-points"); if (r.ok) { const d = await r.json(); setSalesPoints(d); if (d.length > 0 && selectedSalesPointId === null) setSelectedSalesPointId(d[0].id); } } catch (err) { console.error(err); } }
   async function fetchDrinks() { try { const r = await fetch("/api/drinks"); if (r.ok) { const d: Drink[] = await r.json(); const pn = d.filter((x) => x.isPourDrink).map((x) => x.name); const c = new Set<string>(); c.add("Bier"); c.add("Radler"); c.add("Glühwein"); pn.forEach((n) => { if (n.toLowerCase() !== "bier/radler") c.add(n); }); setButtonList(Array.from(c)); } } catch { setButtonList(["Bier", "Radler", "Glühwein"]); } }

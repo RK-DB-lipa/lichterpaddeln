@@ -16,8 +16,9 @@ function bumpCup(tId: number, spId: number, size: string, givenCount: number) {
 export async function POST(req: NextRequest) {
   try {
     const session = await getSession();
-    const tenantId = session?.tenantId ?? 0;
-    const displayName = session?.displayName || "";
+    if (!session) return NextResponse.json({ error: "Nicht autorisiert" }, { status: 401 });
+    const tenantId = session.tenantId;
+    const displayName = session.displayName || "";
 
     const body = await req.json();
     const { items, depositReturned, salesPointId, cashierName } = body;
@@ -106,9 +107,7 @@ export async function POST(req: NextRequest) {
 export async function GET(req: NextRequest) {
   try {
     const session = await getSession();
-    if (!session) {
-      return NextResponse.json({ error: "Nicht autorisiert" }, { status: 401 });
-    }
+    if (!session) return NextResponse.json({ error: "Nicht autorisiert" }, { status: 401 });
     const tenantId = session.tenantId;
 
     const url = new URL(req.url);
