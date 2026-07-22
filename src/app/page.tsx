@@ -117,18 +117,20 @@ export default function POSPage() {
 
   if (session === undefined) return <div className="h-screen bg-gray-900 flex items-center justify-center text-white"><p>Laden...</p></div>;
 
-  if (session === null) {
+  if (!session?.authenticated) {
     return (
       <div className="h-screen bg-gray-900 flex items-center justify-center p-4">
         <form onSubmit={handleLogin} className="bg-gray-800 rounded-2xl p-6 w-full max-w-sm shadow-2xl border border-gray-700">
-          <div className="flex items-center gap-3 mb-6"><img src="/images/turbotap-logo.png" alt="TurboTap" className="w-10 h-10 rounded-lg" /><h1 className="text-2xl font-bold text-white">TurboTap · Kasse</h1></div>
+          <div className="flex items-center gap-3 mb-2"><img src="/images/turbotap-logo.png" alt="TurboTap" className="w-10 h-10 rounded-lg" /><h1 className="text-2xl font-bold text-white">TurboTap</h1></div>
+          <p className="text-xs text-gray-400 mb-6">Kasse · Mitarbeiter-Anmeldung</p>
           {loginError && <div className="bg-red-900/50 text-red-300 text-sm p-3 rounded-lg mb-4 border border-red-700">{loginError}</div>}
           <div className="space-y-4">
-            <div><label className="block text-sm text-gray-400 mb-1">Benutzername</label><input type="text" value={loginUsername} onChange={(e) => setLoginUsername(e.target.value)} className="w-full px-4 py-3 rounded-xl bg-gray-700 text-white border border-gray-600 focus:border-blue-500 focus:outline-none" autoFocus /></div>
+            <div><label className="block text-sm text-gray-400 mb-1">Account (Benutzername)</label><input type="text" value={loginUsername} onChange={(e) => setLoginUsername(e.target.value)} className="w-full px-4 py-3 rounded-xl bg-gray-700 text-white border border-gray-600 focus:border-blue-500 focus:outline-none" autoFocus placeholder="z.B. team-festzelt" /></div>
             <div><label className="block text-sm text-gray-400 mb-1">Passwort</label><input type="password" value={loginPassword} onChange={(e) => setLoginPassword(e.target.value)} className="w-full px-4 py-3 rounded-xl bg-gray-700 text-white border border-gray-600 focus:border-blue-500 focus:outline-none" /></div>
-            <div><label className="block text-sm text-gray-400 mb-1">Dein Name</label><input type="text" value={loginDisplayName} onChange={(e) => setLoginDisplayName(e.target.value)} className="w-full px-4 py-3 rounded-xl bg-gray-700 text-white border border-gray-600 focus:border-blue-500 focus:outline-none" placeholder="z.B. Max" /></div>
-            <button type="submit" className="w-full py-3 rounded-xl font-bold bg-amber-600 hover:bg-amber-500 transition-all">Anmelden</button>
+            <div><label className="block text-sm text-gray-400 mb-1">Dein Mitarbeiter-Name *</label><input type="text" value={loginDisplayName} onChange={(e) => setLoginDisplayName(e.target.value)} className="w-full px-4 py-3 rounded-xl bg-gray-700 text-white border border-gray-600 focus:border-blue-500 focus:outline-none" placeholder="z.B. Max, Anna, Tom" required /></div>
+            <button type="submit" className="w-full py-3 rounded-xl font-bold bg-amber-600 hover:bg-amber-500 transition-all">Als Mitarbeiter anmelden</button>
           </div>
+          <p className="text-[10px] text-gray-500 mt-4 text-center">Dein Mitarbeiter-Name wird für alle Bestellungen und die Statistik erfasst.</p>
         </form>
       </div>
     );
