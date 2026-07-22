@@ -37,11 +37,14 @@ export default function POSPage() {
       if (r.ok) window.location.reload(); else { const d = await r.json(); setLoginError(d.error || "Fehler"); }
     } catch { setLoginError("Verbindungsfehler"); }
   }
-
+  async function handleLogout() { await fetch("/api/auth/logout", { method: "POST" }); window.location.reload(); }
   useEffect(() => { async function rwl() { try { if ("wakeLock" in navigator) { wakeLockRef.current = await (navigator as any).wakeLock.request("screen"); wakeLockRef.current?.addEventListener("release", () => rwl()); } } catch {} } rwl(); const hv = () => { if (document.visibilityState === "visible") rwl(); }; document.addEventListener("visibilitychange", hv); return () => { document.removeEventListener("visibilitychange", hv); wakeLockRef.current?.release?.()?.catch?.(() => {}); }; }, []);
   useEffect(() => { const s = localStorage.getItem("selectedSalesPointId"); if (s) setSelectedSalesPointId(parseInt(s)); }, []);
   useEffect(() => { if (selectedSalesPointId !== null) localStorage.setItem("selectedSalesPointId", selectedSalesPointId.toString()); }, [selectedSalesPointId]);
-  useEffect(() => { fetch("/api/admin/setup", { method: "POST" }).then(() => { fetchDrinks().then(() => fetchSalesPoints()); }); }, []);
+  useEffect(() => {
+  if (!session?.authenticated) return;
+  fetch("/api/admin/setup", { method: "POST" }).then(() => { fetchDrinks().then(() => fetchSalesPoints()); });
+}, [session?.authenticated]);
 
   async function fetchDrinks() {
     try {
@@ -54,8 +57,8 @@ export default function POSPage() {
     try { const r = await fetch("/api/sales-points"); if (r.ok) { const d = await r.json(); setSalesPoints(d); if (d.length > 0 && selectedSalesPointId === null) setSelectedSalesPointId(d[0].id); } } catch (err) { console.error(err); }
   }
 
-  // Refresh drinks when sales point changes
-  useEffect(() => { if (selectedSalesPointId) fetchDrinks(); }, [selectedSalesPointId]);
+  // Refresh drinks when sales point changes (only when authenticated)
+  useEffect(() => { if (session?.authenticated && selectedSalesPointId) fetchDrinks(); }, [session?.authenticated, selectedSalesPointId]);
 
   const addDrink = useCallback((drink: Drink) => {
     if (removeMode) { setRemoveMode(false); setOrderItems((prev) => { const n = new Map(prev); const ex = n.get(drink.id); if (!ex) return n; if (ex.quantity <= 1) n.delete(drink.id); else n.set(drink.id, { ...ex, quantity: ex.quantity - 1 }); return n; }); return; }
@@ -145,7 +148,7 @@ export default function POSPage() {
             {salesPoints.map((sp) => (<option key={sp.id} value={sp.id}>{sp.name}</option>))}
           </select>
           {grandTotal > 0 && <span className="text-base md:text-lg font-bold text-green-400 tabular-nums">{grandTotal.toFixed(2)} €</span>}
-          <a href="/api/auth/logout" onClick={(e) => { e.preventDefault(); fetch("/api/auth/logout").then(() => window.location.href = "/"); }} className="text-[10px] text-red-400 hover:text-red-300 ml-0.5" title="Abmelden">🚪</a>
+          <button onClick={handleLogout} className="text-[10px] text-red-400 hover:text-red-300 ml-0.5" title="Abmelden">🚪</button>
         </div>
       </header>
 
@@ -153,10 +156,10 @@ export default function POSPage() {
         <aside className="w-14 md:w-16 shrink-0 bg-gray-800/90 border-r border-gray-700 flex flex-col items-center py-1.5 gap-1 overflow-y-auto z-30">
           <div className="text-[9px] text-gray-400 font-bold text-center mb-0.5 leading-tight">Pfand<br/>zurück</div>
           <div className="text-[9px] text-amber-400 font-extrabold text-center leading-tight">0,2 l</div>
-          {[1,2,3].map((n) => (<button key={`02-${n}`} onClick={() => addDepositReturn("02", n)} className="w-10 h-10 md:w-11 md:h-11 rounded-lg font-bold text-xs md:text-sm bg-amber-600 hover:bg-amber-500 active:bg-amber-700 active:scale-95 transition-all shadow-md flex flex-col items-center justify-center leading-tight"><span>-{n*2}€</span><span className="text-[8px] opacity-80">{n}×</span></button>))}
+          {[1,2,3,4].map((n) => (<button key={`02-${n}`} onClick={() => addDepositReturn("02", n)} className="w-10 h-10 md:w-11 md:h-11 rounded-lg font-bold text-xs md:text-sm bg-amber-600 hover:bg-amber-500 active:bg-amber-700 active:scale-95 transition-all shadow-md flex flex-col items-center justify-center leading-tight"><span>-{n*2}€</span><span className="text-[8px] opacity-80">{n}×</span></button>))}
           <div className="w-full border-t border-gray-600 my-0.5" />
           <div className="text-[9px] text-amber-400 font-extrabold text-center leading-tight">0,4 l</div>
-          {[1,2,3].map((n) => (<button key={`04-${n}`} onClick={() => addDepositReturn("04", n)} className="w-10 h-10 md:w-11 md:h-11 rounded-lg font-bold text-xs md:text-sm bg-amber-700 hover:bg-amber-600 active:bg-amber-800 active:scale-95 transition-all shadow-md flex flex-col items-center justify-center leading-tight"><span>-{n*2}€</span><span className="text-[8px] opacity-80">{n}×</span></button>))}
+          {[1,2,3,4].map((n) => (<button key={`04-${n}`} onClick={() => addDepositReturn("04", n)} className="w-10 h-10 md:w-11 md:h-11 rounded-lg font-bold text-xs md:text-sm bg-amber-700 hover:bg-amber-600 active:bg-amber-800 active:scale-95 transition-all shadow-md flex flex-col items-center justify-center leading-tight"><span>-{n*2}€</span><span className="text-[8px] opacity-80">{n}×</span></button>))}
           {hasItems && (<><div className="w-full border-t border-gray-600 my-0.5" />
             <button onClick={() => setRemoveMode((m) => !m)} className={`w-10 h-10 md:w-11 md:h-11 rounded-lg font-bold text-lg transition-all shadow-md flex items-center justify-center ${removeMode ? "bg-red-500 text-white ring-2 ring-red-300 scale-110" : "bg-gray-700 hover:bg-gray-600 text-gray-300"} active:scale-95`} title="Minus-Modus">−</button></>)}
           {hasItems && (<><div className="w-full border-t border-gray-600 my-1" />

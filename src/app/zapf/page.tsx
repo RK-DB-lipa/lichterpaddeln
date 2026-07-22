@@ -28,17 +28,28 @@ export default function ZapfPage() {
       if (r.ok) window.location.reload(); else { const d = await r.json(); setLoginError(d.error || "Fehler"); }
     } catch { setLoginError("Verbindungsfehler"); }
   }
-
+  async function handleLogout() { await fetch("/api/auth/logout", { method: "POST" }); window.location.reload(); }
 
   useEffect(() => {
     if (!session?.authenticated) return;
     const saved = localStorage.getItem("zapfSalesPointId");
     if (saved) setSelectedSalesPointId(parseInt(saved));
-    fetchSalesPoints(); fetchDrinks(); fetchStats();
+    fetchSalesPoints();
+    fetchDrinks();
+    fetchStats();
   }, [session?.authenticated]);
 
-  useEffect(() => { if (selectedSalesPointId !== null) { localStorage.setItem("zapfSalesPointId", selectedSalesPointId.toString()); fetchQueue(); } }, [selectedSalesPointId]);
-  useEffect(() => { if (!selectedSalesPointId) return; const i = setInterval(() => { fetchQueue(); fetchStats(); }, 1000); return () => clearInterval(i); }, [selectedSalesPointId]);
+  useEffect(() => {
+    if (!session?.authenticated || selectedSalesPointId === null) return;
+    localStorage.setItem("zapfSalesPointId", selectedSalesPointId.toString());
+    fetchQueue();
+  }, [session?.authenticated, selectedSalesPointId]);
+
+  useEffect(() => {
+    if (!session?.authenticated || !selectedSalesPointId) return;
+    const i = setInterval(() => { fetchQueue(); fetchStats(); }, 1000);
+    return () => clearInterval(i);
+  }, [session?.authenticated, selectedSalesPointId]);
 
   async function fetchSalesPoints() { try { const r = await fetch("/api/sales-points"); if (r.ok) { const d = await r.json(); setSalesPoints(d); if (d.length > 0 && selectedSalesPointId === null) setSelectedSalesPointId(d[0].id); } } catch (err) { console.error(err); } }
   async function fetchDrinks() { try { const r = await fetch("/api/drinks"); if (r.ok) { const d: Drink[] = await r.json(); const pn = d.filter((x) => x.isPourDrink).map((x) => x.name); const c = new Set<string>(); c.add("Bier"); c.add("Radler"); c.add("Glühwein"); pn.forEach((n) => { if (n.toLowerCase() !== "bier/radler") c.add(n); }); setButtonList(Array.from(c)); } } catch { setButtonList(["Bier", "Radler", "Glühwein"]); } }
@@ -88,7 +99,7 @@ export default function ZapfPage() {
             {salesPoints.map((sp) => (<option key={sp.id} value={sp.id}>{sp.name}</option>))}
           </select>
           <a href="/" className="text-xs bg-gray-700 hover:bg-gray-600 rounded-lg px-2 py-1 border border-gray-600 font-bold transition-colors">🧾 Kasse</a>
-          <a href="/api/auth/logout" onClick={(e) => { e.preventDefault(); fetch("/api/auth/logout").then(() => window.location.href = "/"); }} className="text-[10px] text-red-400 hover:text-red-300 ml-0.5" title="Abmelden">🚪</a>
+          <button onClick={handleLogout} className="text-[10px] text-red-400 hover:text-red-300 ml-0.5" title="Abmelden">🚪</button>
         </div>
       </header>
       {lastAction && <div className="shrink-0 bg-green-700 text-white text-center py-1 text-xs md:text-sm font-bold animate-pulse">✅ {lastAction}</div>}

@@ -7,7 +7,8 @@ import { eq, and, asc } from "drizzle-orm";
 export async function GET() {
   try {
     const session = await getSession();
-    const tenantId = session?.tenantId ?? 0;
+    if (!session) return NextResponse.json({ error: "Nicht autorisiert" }, { status: 401 });
+    const tenantId = session.tenantId;
 
     const points = await db
       .select()

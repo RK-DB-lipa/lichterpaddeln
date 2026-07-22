@@ -98,7 +98,7 @@ export default function AdminPage() {
       if (r.ok) { window.location.reload(); } else { const d = await r.json(); setLoginError(d.error || "Fehler"); }
     } catch { setLoginError("Verbindungsfehler"); }
   }
-
+  async function handleLogout() { await fetch("/api/auth/logout", { method: "POST" }); setSession(null); }
   async function api(path: string, method: string, body?: any) { const r = await fetch(path, { method, headers: { "Content-Type": "application/json" }, body: body ? JSON.stringify(body) : undefined }); if (!r.ok) throw new Error((await r.json()).error || "API-Fehler"); return r.json(); }
 
   async function handleSaveDrink(e: React.FormEvent) {
@@ -163,12 +163,12 @@ export default function AdminPage() {
         <div className="flex items-center gap-3">
           <a href="/" className="text-sm text-blue-400 hover:underline">← Kasse</a>
           <a href="/zapf" className="text-sm text-green-400 hover:underline">Zapfen →</a>
-          <a href="/api/auth/logout" onClick={(e) => { e.preventDefault(); fetch("/api/auth/logout").then(() => window.location.href = "/"); }} className="text-sm text-red-400 hover:text-red-300">Abmelden</a>
+          <button onClick={handleLogout} className="text-sm text-red-400 hover:text-red-300">Abmelden</button>
         </div>
       </header>
 
       <div className="flex border-b border-gray-700 shrink-0">
-        {[["drinks","🍺 Getränke"],["salesPoints","🏪 Verkaufsstellen"],["cups","🥤 Becher"],["orders","📊 Bestellungen"],...(isSuperAdmin ? [["users","👥 Nutzer"],["super","🔐 Super-Admin"]] : [])].map(([tab,label]) => (
+        {[["drinks","🍺 Getränke"],["salesPoints","🏪 Verkaufsstellen"],["cups","🥤 Becher"],["orders","📊 Bestellungen"],...(isSuperAdmin ? [["users","👥 Nutzer"],["super","🔐 Super-Admin"]] : [["users","👥 Nutzer"]])].map(([tab,label]) => (
           <button key={tab} onClick={() => setActiveTab(tab)} className={`flex-1 py-3 text-center font-bold text-sm ${activeTab === tab ? "border-b-2 border-amber-500 text-amber-400" : "text-gray-400"}`}>{label}</button>
         ))}
       </div>

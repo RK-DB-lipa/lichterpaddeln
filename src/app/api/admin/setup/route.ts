@@ -13,7 +13,11 @@ async function runSetup() {
   }
 
   const session = await getSession();
-  const tenantId = session?.tenantId ?? 0;
+  // Ohne Session: Setup überspringen (Login-Screen wird angezeigt)
+  if (!session) {
+    return NextResponse.json({ message: "Kein Login – Setup übersprungen" });
+  }
+  const tenantId = session.tenantId;
 
   const existingSP = await db.select().from(salesPoints).where(eq(salesPoints.tenantId, tenantId)).limit(1);
   if (existingSP.length === 0) {

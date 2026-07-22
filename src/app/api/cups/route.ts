@@ -10,13 +10,14 @@ export async function GET() {
     if (!session) return NextResponse.json({ error: "Nicht autorisiert" }, { status: 401 });
     const tenantId = session.tenantId;
 
+    // Alle Zähler (given + returned) für diese Tenant
     const results = await db
       .select()
       .from(cupCounters)
       .where(eq(cupCounters.tenantId, tenantId));
 
     // Build map per sales point
-    const map = new Map<number, { given02: number; given04: number }>();
+    const map = new Map<number, { given02: number; given04: number; returned02: number; returned04: number }>();
 
     const points = await db
       .select({ id: salesPoints.id })
@@ -24,13 +25,18 @@ export async function GET() {
       .where(and(eq(salesPoints.tenantId, tenantId), eq(salesPoints.isActive, true)));
 
     for (const p of points) {
-      map.set(p.id, { given02: 0, given04: 0 });
+      map.set(p.id, { given02: 0, given04: 0, returned02: 0, returned04: 0 });
     }
 
     for (const r of results) {
-      const entry = map.get(r.salesPointId) ?? { given02: 0, given04: 0 };
-      if (r.size === "02") entry.given02 += r.given;
-      else entry.given04 += r.given;
+      const entry = map.get(r.salesPointId) ?? { given02: 0, given04: 0, returned02: 0, returned04: 0 };
+      if (r.size === "02") {
+        entry.given02 += r.given;
+        entry.returned02 += r.returned;
+      } else {
+        entry.given04 += r.given;
+        entry.returned04 += r.returned;
+      }
       map.set(r.salesPointId, entry);
     }
 

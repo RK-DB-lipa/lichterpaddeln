@@ -8,7 +8,8 @@ import { eq, and, inArray } from "drizzle-orm";
 export async function GET(req: NextRequest) {
   try {
     const session = await getSession();
-    const tenantId = session?.tenantId ?? 0;
+    if (!session) return NextResponse.json({ error: "Nicht autorisiert" }, { status: 401 });
+    const tenantId = session.tenantId;
     const url = new URL(req.url);
     const salesPointId = url.searchParams.get("salesPointId");
 
@@ -52,7 +53,8 @@ export async function POST(req: NextRequest) {
     const admin = await getAuthAdmin();
     if (!admin) return NextResponse.json({ error: "Nicht autorisiert" }, { status: 401 });
     const session = await getSession();
-    const tenantId = session?.tenantId ?? 0;
+    if (!session) return NextResponse.json({ error: "Nicht autorisiert" }, { status: 401 });
+    const tenantId = session.tenantId;
 
     const body = await req.json();
     const { name, priceGross, taxRate, hasDeposit, depositAmount, cupSize, color, imageUrl, sortOrder, isPourDrink, salesPointIds } = body;
