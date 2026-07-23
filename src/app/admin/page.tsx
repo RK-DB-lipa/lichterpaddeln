@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 
-type Drink = { id: number; name: string; priceGross: number; taxRate: number; hasDeposit: boolean; depositAmount: number; cupSize: string; color: string; imageUrl: string | null; isActive: boolean; sortOrder: number; isPourDrink: boolean; salesPointIds?: number[]; };
+type Drink = { id: number; name: string; priceGross: number; taxRate: number; hasDeposit: boolean; depositAmount: number; cupSize: string; color: string; imageUrl: string | null; isActive: boolean; sortOrder: number; isPourDrink: boolean; salesPointIds?: number[]; group?: string | null; };
 type SalesPoint = { id: number; name: string; isActive: boolean; sortOrder: number; };
 type OrderItemSummary = { drinkName: string; totalQuantity: number; totalGross: number; totalDeposit: number; };
 type OrderTotals = { totalOrders: number; totalRevenue: number; totalDepositsCharged: number; totalDepositsReturned: number; netDeposits: number; };
@@ -12,7 +12,7 @@ type PourStat = { drinkName: string; totalPoured: number; };
 type CupCounter = { salesPointId: number; given02: number; given04: number; returned02: number; returned04: number; };
 type TenantInfo = { userId: number; username: string; isActive: boolean; expiresAt: string; drinks: number; orders: number; pours: number; };
 
-const EMPTY_DRINK = { name: "", priceGross: "", taxRate: "19", hasDeposit: true, depositAmount: "2.00", cupSize: "04", color: "#3B82F6", imageUrl: "", sortOrder: "0", isPourDrink: false, salesPointIds: [] as number[] };
+const EMPTY_DRINK = { name: "", priceGross: "", taxRate: "19", hasDeposit: true, depositAmount: "2.00", cupSize: "04", color: "#3B82F6", imageUrl: "", sortOrder: "0", isPourDrink: false, salesPointIds: [] as number[], group: "" };
 
 export default function AdminPage() {
   const [session, setSession] = useState<any>(undefined);
@@ -105,12 +105,20 @@ export default function AdminPage() {
     e.preventDefault(); setFormError("");
     if (!formData.name || !formData.priceGross) { setFormError("Name und Bruttopreis erforderlich"); return; }
     try {
-      const p = { name: formData.name, priceGross: parseFloat(formData.priceGross), taxRate: parseFloat(formData.taxRate), hasDeposit: formData.hasDeposit, depositAmount: parseFloat(formData.depositAmount), cupSize: formData.cupSize, color: formData.color, imageUrl: formData.imageUrl || null, sortOrder: parseInt(formData.sortOrder) || 0, isPourDrink: formData.isPourDrink, salesPointIds: formData.salesPointIds || [] };
+      const p = { name: formData.name, priceGross: parseFloat(formData.priceGross), taxRate: parseFloat(formData.taxRate), hasDeposit: formData.hasDeposit, depositAmount: parseFloat(formData.depositAmount), cupSize: formData.cupSize, color: formData.color, imageUrl: formData.imageUrl || null, sortOrder: parseInt(formData.sortOrder) || 0, isPourDrink: formData.isPourDrink, salesPointIds: formData.salesPointIds || [], group: formData.group || null };
       if (editingDrink) await api(`/api/drinks/${editingDrink.id}`, "PUT", p); else await api("/api/drinks", "POST", p);
       setShowDrinkForm(false); fetchDrinks();
     } catch (err: any) { setFormError(err.message); }
   }
   async function handleDeleteDrink(id: number) { if (!confirm("Getränk deaktivieren?")) return; try { await api(`/api/drinks/${id}`, "DELETE"); fetchDrinks(); } catch (err) { console.error(err); } }
+  async function handleSortDrink(drinkId: number, action: "top" | "up" | "down" | "bottom") {
+    try { await api("/api/drinks/sort", "POST", { drinkId, action }); fetchDrinks(); }
+    catch (err: any) { alert(err.message || "Fehler beim Verschieben"); }
+  }
+  async function handleSortSP(spId: number, action: "top" | "up" | "down" | "bottom") {
+    try { await api("/api/sales-points/sort", "POST", { salesPointId: spId, action }); fetchSalesPoints(); }
+    catch (err: any) { alert(err.message || "Fehler beim Verschieben"); }
+  }
   async function handleSaveSP(e: React.FormEvent) { e.preventDefault(); setSpFormError(""); if (!spFormName.trim()) { setSpFormError("Name erforderlich"); return; } try { await api("/api/sales-points", "POST", { name: spFormName.trim() }); setShowSalesPointForm(false); setSpFormName(""); fetchSalesPoints(); } catch (err: any) { setSpFormError(err.message); } }
   async function handleUpdateSP(e: React.FormEvent) { e.preventDefault(); if (!editingSalesPoint || !spEditName.trim()) return; try { await api(`/api/sales-points/${editingSalesPoint.id}`, "PUT", { name: spEditName.trim() }); setEditingSalesPoint(null); setSpEditName(""); fetchSalesPoints(); } catch (err) { console.error(err); } }
   async function handleDeleteSP(id: number) { if (!confirm("Verkaufsstelle deaktivieren?")) return; try { await api(`/api/sales-points/${id}`, "DELETE"); fetchSalesPoints(); } catch (err) { console.error(err); } }
@@ -180,15 +188,38 @@ export default function AdminPage() {
           <div>
             <div className="flex justify-between items-center mb-4"><h2 className="text-lg font-bold">Getränke</h2>
               <button onClick={() => { setEditingDrink(null); setFormData({...EMPTY_DRINK}); setFormError(""); setShowDrinkForm(true); }} className="px-4 py-2 rounded-xl bg-green-600 hover:bg-green-500 font-bold text-sm">+ Neues</button></div>
-            {drinks.map((d) => (
-              <div key={d.id} className="bg-gray-800 rounded-xl p-3 flex items-center gap-3 border border-gray-700 mb-2">
-                <div className="w-10 h-10 rounded-lg shrink-0 flex items-center justify-center font-bold text-white text-xs" style={{backgroundColor:d.color}}>{d.name.charAt(0)}</div>
-                <div className="flex-1 min-w-0"><div className="font-bold truncate flex items-center gap-2">{d.name}{d.isPourDrink && <span className="text-[10px] bg-orange-600 px-1.5 py-0.5 rounded text-white">ZAPF</span>}</div>
-                  <div className="text-xs text-gray-400"><span className="text-green-400 font-bold">{d.priceGross.toFixed(2)} € brutto</span> · {d.taxRate}% MwSt. · {d.hasDeposit ? `${d.depositAmount.toFixed(2)} € Pfand · ${d.cupSize==="02"?"0,2L":"0,4L"}` : "Kein Pfand"}{d.salesPointIds?.length ? ` · an ${d.salesPointIds.length} Stelle(n)` : " · überall"}</div></div>
-                <button onClick={() => { openEditDrink(d); setShowDrinkForm(true); }} className="px-3 py-1.5 rounded-lg bg-gray-600 hover:bg-gray-500 text-sm">✏️</button>
-                <button onClick={() => handleDeleteDrink(d.id)} className="px-3 py-1.5 rounded-lg bg-red-900/50 hover:bg-red-800/50 text-sm">🗑️</button>
-              </div>
-            ))}
+            {(() => {
+              let lastGroup: string | null = "__NONE__";
+              return drinks.map((d) => {
+                const currentGroup = d.group || null;
+                const showSeparator = currentGroup && currentGroup !== lastGroup;
+                if (currentGroup) lastGroup = currentGroup;
+                return (
+                  <div key={d.id} className="contents">
+                    {showSeparator && (
+                      <div className="col-span-full flex items-center gap-2 my-2">
+                        <span className="h-px flex-1 bg-gray-600" />
+                        <span className="text-xs text-gray-400 font-bold uppercase tracking-wider">{currentGroup}</span>
+                        <span className="h-px flex-1 bg-gray-600" />
+                      </div>
+                    )}
+                    <div className="bg-gray-800 rounded-xl p-3 flex items-center gap-3 border border-gray-700 mb-2">
+                      <div className="w-10 h-10 rounded-lg shrink-0 flex items-center justify-center font-bold text-white text-xs" style={{backgroundColor:d.color}}>{d.name.charAt(0)}</div>
+                      <div className="flex-1 min-w-0"><div className="font-bold truncate flex items-center gap-2">{d.name}{d.isPourDrink && <span className="text-[10px] bg-orange-600 px-1.5 py-0.5 rounded text-white">ZAPF</span>}</div>
+                        <div className="text-xs text-gray-400"><span className="text-green-400 font-bold">{d.priceGross.toFixed(2)} € brutto</span> · {d.taxRate}% MwSt. · {d.hasDeposit ? `${d.depositAmount.toFixed(2)} € Pfand · ${d.cupSize==="02"?"0,2L":"0,4L"}` : "Kein Pfand"}{d.group && <span className="ml-1 text-purple-400">· 📁 {d.group}</span>}{d.salesPointIds?.length ? ` · an ${d.salesPointIds.length} Stelle(n)` : " · überall"}</div></div>
+                      <div className="flex flex-col gap-0.5">
+                        <button onClick={() => handleSortDrink(d.id, "top")} className="px-1.5 py-0.5 rounded bg-blue-700 hover:bg-blue-600 text-[10px] font-bold" title="Ganz nach oben">⏫</button>
+                        <button onClick={() => handleSortDrink(d.id, "up")} className="px-1.5 py-0.5 rounded bg-blue-700 hover:bg-blue-600 text-[10px] font-bold" title="Eins nach oben">⇡</button>
+                        <button onClick={() => handleSortDrink(d.id, "down")} className="px-1.5 py-0.5 rounded bg-blue-700 hover:bg-blue-600 text-[10px] font-bold" title="Eins nach unten">⇣</button>
+                        <button onClick={() => handleSortDrink(d.id, "bottom")} className="px-1.5 py-0.5 rounded bg-blue-700 hover:bg-blue-600 text-[10px] font-bold" title="Ganz nach unten">⏬</button>
+                      </div>
+                      <button onClick={() => { openEditDrink(d); setShowDrinkForm(true); }} className="px-3 py-1.5 rounded-lg bg-gray-600 hover:bg-gray-500 text-sm">✏️</button>
+                      <button onClick={() => handleDeleteDrink(d.id)} className="px-3 py-1.5 rounded-lg bg-red-900/50 hover:bg-red-800/50 text-sm">🗑️</button>
+                    </div>
+                  </div>
+                );
+              });
+            })()}
           </div>
         )}
 
@@ -201,6 +232,12 @@ export default function AdminPage() {
               <div key={sp.id} className="bg-gray-800 rounded-xl p-3 flex items-center gap-3 border border-gray-700 mb-2">
                 <div className="w-10 h-10 rounded-lg shrink-0 flex items-center justify-center font-bold text-white text-xs bg-blue-600">{sp.name.charAt(0)}</div>
                 <div className="flex-1 min-w-0"><div className="font-bold">{sp.name}</div><div className="text-xs text-gray-400">Sortierung: {sp.sortOrder}</div></div>
+                <div className="flex flex-col gap-0.5">
+                  <button onClick={() => handleSortSP(sp.id, "top")} className="px-1.5 py-0.5 rounded bg-blue-700 hover:bg-blue-600 text-[10px] font-bold" title="Ganz nach oben">⏫</button>
+                  <button onClick={() => handleSortSP(sp.id, "up")} className="px-1.5 py-0.5 rounded bg-blue-700 hover:bg-blue-600 text-[10px] font-bold" title="Eins nach oben">⇡</button>
+                  <button onClick={() => handleSortSP(sp.id, "down")} className="px-1.5 py-0.5 rounded bg-blue-700 hover:bg-blue-600 text-[10px] font-bold" title="Eins nach unten">⇣</button>
+                  <button onClick={() => handleSortSP(sp.id, "bottom")} className="px-1.5 py-0.5 rounded bg-blue-700 hover:bg-blue-600 text-[10px] font-bold" title="Ganz nach unten">⏬</button>
+                </div>
                 <button onClick={()=>{setEditingSalesPoint(sp);setSpEditName(sp.name);}} className="px-3 py-1.5 rounded-lg bg-gray-600 hover:bg-gray-500 text-sm">✏️</button>
                 <button onClick={()=>handleDeleteSP(sp.id)} className="px-3 py-1.5 rounded-lg bg-red-900/50 hover:bg-red-800/50 text-sm">🗑️</button>
               </div>
@@ -307,7 +344,7 @@ export default function AdminPage() {
       </div>
 
       {/* Drink Form Modal */}
-      {showDrinkForm && <DrinkFormModal editingDrink={editingDrink} formData={formData} formError={formError} setFormData={setFormData} handleSave={handleSaveDrink} salesPoints={salesPoints} onClose={()=>setShowDrinkForm(false)} />}
+      {showDrinkForm && <DrinkFormModal editingDrink={editingDrink} formData={formData} formError={formError} setFormData={setFormData} handleSave={handleSaveDrink} salesPoints={salesPoints} drinks={drinks} onClose={()=>setShowDrinkForm(false)} />}
       {showSalesPointForm && <SimpleModal title="Neue Verkaufsstelle" error={spFormError} value={spFormName} onChange={setSpFormName} onSubmit={handleSaveSP} onClose={()=>setShowSalesPointForm(false)} />}
       {editingSalesPoint && <SimpleModal title="Bearbeiten" error="" value={spEditName} onChange={setSpEditName} onSubmit={handleUpdateSP} onClose={()=>setEditingSalesPoint(null)} />}
       {showResetConfirm && <ConfirmModal title="Zähler zurücksetzen?" onConfirm={handleResetOrders} onClose={()=>setShowResetConfirm(false)}><p className="text-sm text-gray-300 text-center">{resetTarget ? `Bestellungen für "${getSPName(parseInt(resetTarget))}" löschen.` : "ALLE Bestellungen löschen."}</p></ConfirmModal>}
@@ -347,7 +384,7 @@ export default function AdminPage() {
       name: d.name, priceGross: d.priceGross.toString(), taxRate: d.taxRate.toString(),
       hasDeposit: d.hasDeposit, depositAmount: d.depositAmount.toString(), cupSize: d.cupSize,
       color: d.color, imageUrl: d.imageUrl || "", sortOrder: d.sortOrder.toString(),
-      isPourDrink: d.isPourDrink, salesPointIds: d.salesPointIds || [],
+      isPourDrink: d.isPourDrink, salesPointIds: d.salesPointIds || [], group: d.group || "",
     });
     setFormError("");
   }
@@ -355,7 +392,8 @@ export default function AdminPage() {
 
 // --- SUBCOMPONENTS ---
 
-function DrinkFormModal({editingDrink,formData,formError,setFormData,handleSave,salesPoints,onClose}:any) {
+function DrinkFormModal({editingDrink,formData,formError,setFormData,handleSave,salesPoints,drinks,onClose}:any) {
+  const existingGroups = Array.from(new Set((drinks || []).map((d:any) => d.group).filter(Boolean))) as string[];
   const nettoPreview = formData.priceGross ? (parseFloat(formData.priceGross) / (1 + parseFloat(formData.taxRate || "19") / 100)).toFixed(2) : "0.00";
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
@@ -373,6 +411,11 @@ function DrinkFormModal({editingDrink,formData,formError,setFormData,handleSave,
           {formData.hasDeposit && <div className="grid grid-cols-2 gap-3"><div><label className="block text-sm text-gray-400 mb-1">Pfand (€)</label><input type="number" step="0.01" value={formData.depositAmount} onChange={(e)=>setFormData({...formData,depositAmount:e.target.value})} className="w-full px-4 py-2.5 rounded-xl bg-gray-700 text-white border border-gray-600 focus:border-blue-500 focus:outline-none" /></div>
             <div><label className="block text-sm text-gray-400 mb-1">Bechergröße</label><select value={formData.cupSize} onChange={(e)=>setFormData({...formData,cupSize:e.target.value})} className="w-full px-4 py-2.5 rounded-xl bg-gray-700 text-white border border-gray-600 focus:border-blue-500 focus:outline-none"><option value="02">0,2 l</option><option value="04">0,4 l</option></select></div></div>}
           <label className="flex items-center gap-2 cursor-pointer"><input type="checkbox" checked={formData.isPourDrink} onChange={(e)=>setFormData({...formData,isPourDrink:e.target.checked})} className="w-5 h-5 rounded accent-orange-500" /><span className="text-sm text-gray-300">Zapfgetränk</span></label>
+          <div><label className="block text-sm text-gray-400 mb-1">Gruppe (optional)</label>
+            <input type="text" list="groupList" value={formData.group} onChange={(e)=>setFormData({...formData,group:e.target.value})} className="w-full px-4 py-2.5 rounded-xl bg-gray-700 text-white border border-gray-600 focus:border-blue-500 focus:outline-none" placeholder="z.B. Kaltgetränke, Heißgetränke, Alkoholfrei" />
+            <datalist id="groupList">{existingGroups.map((g)=>(<option key={g} value={g} />))}</datalist>
+            <p className="text-[10px] text-gray-500 mt-1">Getränke mit gleicher Gruppe werden im Frontend zusammengefasst.</p>
+          </div>
           <div><label className="block text-sm text-gray-400 mb-1">Verfügbar an Verkaufsstellen</label>
             <div className="space-y-1 max-h-32 overflow-y-auto bg-gray-700/50 rounded-lg p-2">
               {salesPoints.length === 0 ? <p className="text-xs text-gray-400">Keine Verkaufsstellen vorhanden</p> : salesPoints.map((sp:any) => (
