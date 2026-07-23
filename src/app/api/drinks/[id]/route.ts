@@ -26,6 +26,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
       imageUrl: body.imageUrl !== undefined ? body.imageUrl : existing[0].imageUrl,
       sortOrder: body.sortOrder !== undefined ? parseInt(body.sortOrder) : existing[0].sortOrder,
       isPourDrink: body.isPourDrink !== undefined ? body.isPourDrink : existing[0].isPourDrink,
+      group: body.group !== undefined ? body.group || null : existing[0].group,
     }).where(eq(drinks.id, parseInt(id))).returning();
 
     // Verkaufsstellen-Zuordnung aktualisieren

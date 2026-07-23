@@ -36,7 +36,7 @@ export async function getSession(): Promise<SessionPayload | null> {
   const session = await verifyToken(token);
   if (!session) return null;
 
-  // Für Lizenznutzer: Prüfe ob noch aktiv & nicht abgelaufen
+  // Für Lizenznutzer: Prüfe ob noch aktiv & nicht abgelaufen (expiresAt null = permanent)
   if (session.role === "user" && session.userId) {
     const { db } = await import("@/db");
     const { managedUsers } = await import("@/db/schema");
@@ -46,7 +46,9 @@ export async function getSession(): Promise<SessionPayload | null> {
       .from(managedUsers)
       .where(eq(managedUsers.id, session.userId))
       .limit(1);
-    if (user.length === 0 || !user[0].isActive || new Date(user[0].expiresAt).getTime() < Date.now()) {
+    if (user.length === 0 || !user[0].isActive) return null;
+    // expiresAt null = nie ablaufend (z.B. Lipa-User)
+    if (user[0].expiresAt && new Date(user[0].expiresAt).getTime() < Date.now()) {
       return null;
     }
   }

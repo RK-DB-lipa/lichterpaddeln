@@ -136,7 +136,10 @@ export async function PATCH(req: NextRequest) {
       case "extend": {
         const days = LICENSE_DAYS[String(value)];
         if (!days) return NextResponse.json({ error: "Ungültiger Zeitraum" }, { status: 400 });
-        const base = Math.max(new Date(user[0].expiresAt).getTime(), Date.now());
+        // expiresAt kann null sein (z.B. Lipa-User permanent) – dann von jetzt rechnen
+        const base = user[0].expiresAt
+          ? Math.max(new Date(user[0].expiresAt).getTime(), Date.now())
+          : Date.now();
         const newExpires = new Date(base + days * 24 * 60 * 60 * 1000);
         await db
           .update(managedUsers)
