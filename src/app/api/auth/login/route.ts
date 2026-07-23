@@ -48,7 +48,8 @@ export async function POST(req: NextRequest) {
       if (!user[0].isActive) {
         return NextResponse.json({ error: "Konto ist deaktiviert" }, { status: 403 });
       }
-      if (new Date(user[0].expiresAt).getTime() < Date.now()) {
+      // expiresAt null = permanent (z.B. Lipa-User)
+      if (user[0].expiresAt && new Date(user[0].expiresAt).getTime() < Date.now()) {
         return NextResponse.json(
           { error: `Lizenz abgelaufen am ${new Date(user[0].expiresAt).toLocaleDateString("de-DE")}` },
           { status: 403 }

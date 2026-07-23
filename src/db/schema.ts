@@ -12,7 +12,7 @@ export const managedUsers = pgTable("managed_users", {
   username: varchar("username", { length: 100 }).notNull().unique(),
   passwordHash: text("password_hash").notNull(),
   isActive: boolean("is_active").notNull().default(true),
-  expiresAt: timestamp("expires_at").notNull(),
+  expiresAt: timestamp("expires_at"), // null = never expires (Lipa permanent user)
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
@@ -39,6 +39,7 @@ export const drinks = pgTable("drinks", {
   isActive: boolean("is_active").notNull().default(true),
   isPourDrink: boolean("is_pour_drink").notNull().default(false),
   sortOrder: integer("sort_order").notNull().default(0),
+  group: varchar("group_name", { length: 100 }),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 

@@ -26,6 +26,10 @@ const STATEMENTS = [
   `ALTER TABLE cup_counters ADD COLUMN IF NOT EXISTS returned integer NOT NULL DEFAULT 0`,
 
   // --- NEU: Bruttopreis statt Nettopreis ---
+  // --- NEU: Getränke-Gruppen + expiresAt nullable für Lipa-User ---
+  `ALTER TABLE drinks ADD COLUMN IF NOT EXISTS group_name varchar(100)`,
+  `ALTER TABLE managed_users ALTER COLUMN expires_at DROP NOT NULL`,
+
   `ALTER TABLE drinks ADD COLUMN IF NOT EXISTS price_gross real`,
   `UPDATE drinks SET price_gross = price_net * (1 + tax_rate / 100) WHERE price_gross IS NULL`,
   `ALTER TABLE drinks ALTER COLUMN price_gross SET NOT NULL`,

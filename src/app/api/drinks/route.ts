@@ -17,7 +17,7 @@ export async function GET(req: NextRequest) {
       .select()
       .from(drinks)
       .where(and(eq(drinks.tenantId, tenantId), eq(drinks.isActive, true)))
-      .orderBy(drinks.sortOrder);
+      .orderBy(drinks.group, drinks.sortOrder);
 
     // Lade Verkaufsstellen-Zuordnung für alle aktiven Getränke
     const drinkIds = activeDrinks.map((d) => d.id);
@@ -57,11 +57,14 @@ export async function POST(req: NextRequest) {
     const tenantId = session.tenantId;
 
     const body = await req.json();
-    const { name, priceGross, taxRate, hasDeposit, depositAmount, cupSize, color, imageUrl, sortOrder, isPourDrink, salesPointIds } = body;
+    const { name, priceGross, taxRate, hasDeposit, depositAmount, cupSize, color, imageUrl, sortOrder, isPourDrink, salesPointIds, group } = body;
 
     if (!name || priceGross === undefined) {
       return NextResponse.json({ error: "Name und Bruttopreis sind erforderlich" }, { status: 400 });
     }
+
+    // Auto sort order: an das Ende setzen
+    const maxSort = sortOrder !== undefined ? parseInt(sortOrder) : 9999;
 
     const [drink] = await db
       .insert(drinks)
@@ -73,8 +76,9 @@ export async function POST(req: NextRequest) {
         depositAmount: depositAmount !== undefined ? parseFloat(depositAmount) : 2.0,
         cupSize: cupSize || "04", color: color || "#3B82F6",
         imageUrl: imageUrl || null,
-        sortOrder: sortOrder !== undefined ? parseInt(sortOrder) : 0,
+        sortOrder: maxSort,
         isPourDrink: isPourDrink !== undefined ? isPourDrink : false,
+        group: group || null,
       })
       .returning();
 

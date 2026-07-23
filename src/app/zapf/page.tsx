@@ -7,7 +7,7 @@ type Drink = { id: number; name: string; isPourDrink: boolean };
 type QueueItem = { id: number; drinkName: string; pendingCount: number };
 type StatItem = { drinkName: string; totalPoured: number };
 
-const DEFAULT_POUR_BUTTONS = ["Bier", "Radler", "Glühwein"];
+const DEFAULT_POUR_BUTTONS = ["Bier", "Radler"];
 
 export default function ZapfPage() {
   const [session, setSession] = useState<any>(undefined);
@@ -52,7 +52,28 @@ export default function ZapfPage() {
   }, [session?.authenticated, selectedSalesPointId]);
 
   async function fetchSalesPoints() { try { const r = await fetch("/api/sales-points"); if (r.ok) { const d = await r.json(); setSalesPoints(d); if (d.length > 0 && selectedSalesPointId === null) setSelectedSalesPointId(d[0].id); } } catch (err) { console.error(err); } }
-  async function fetchDrinks() { try { const r = await fetch("/api/drinks"); if (r.ok) { const d: Drink[] = await r.json(); const pn = d.filter((x) => x.isPourDrink).map((x) => x.name); const c = new Set<string>(); c.add("Bier"); c.add("Radler"); c.add("Glühwein"); pn.forEach((n) => { if (n.toLowerCase() !== "bier/radler") c.add(n); }); setButtonList(Array.from(c)); } } catch { setButtonList(["Bier", "Radler", "Glühwein"]); } }
+  async function fetchDrinks() {
+    try {
+      const r = await fetch("/api/drinks");
+      if (r.ok) {
+        const d: Drink[] = await r.json();
+        const pn = d.filter((x) => x.isPourDrink).map((x) => x.name);
+        const c = new Set<string>();
+        c.add("Bier"); c.add("Radler");
+        pn.forEach((n) => { if (n.toLowerCase() !== "bier/radler") c.add(n); });
+        setButtonList(Array.from(c));
+      }
+    } catch { setButtonList(["Bier", "Radler"]); }
+  }
+
+  // Wake Lock für Zapf-Ansicht
+  useEffect(() => {
+    async function rwl() { try { if ("wakeLock" in navigator) { (navigator as any).wakeLock.request("screen"); } } catch {} }
+    rwl();
+    const hv = () => { if (document.visibilityState === "visible") rwl(); };
+    document.addEventListener("visibilitychange", hv);
+    return () => document.removeEventListener("visibilitychange", hv);
+  }, [session?.authenticated]);
   async function fetchQueue() { if (!selectedSalesPointId) return; try { const r = await fetch(`/api/pour/queue?salesPointId=${selectedSalesPointId}`); if (r.ok) setRawQueue(await r.json()); } catch (err) { console.error(err); } }
   async function fetchStats() { if (!selectedSalesPointId) return; try { const r = await fetch(`/api/pour/stats?salesPointId=${selectedSalesPointId}`); if (r.ok) { const d: StatItem[] = await r.json(); const m = new Map<string, number>(); d.forEach((i) => m.set(i.drinkName, i.totalPoured)); setStats(m); } } catch (err) { console.error(err); } }
 
@@ -93,7 +114,7 @@ export default function ZapfPage() {
       <header className="flex items-center justify-between px-3 py-2 bg-gray-800 border-b border-gray-700 shrink-0">
         <div className="flex items-center gap-2">
           <img src="/images/turbotap-logo.png" alt="" className="w-6 h-6 rounded" />
-          <span className="font-bold text-sm md:text-base truncate">Zapfen – {sp?.name || "..."}</span>
+          <span className="font-bold text-sm md:text-base truncate">TurboTap · Zapfen – {sp?.name || "..."}</span>
         </div>
         <div className="flex items-center gap-2">
           <span className="text-[10px] bg-gray-700 rounded px-1.5 py-0.5 text-gray-300 hidden sm:inline">👤 {session.displayName || session.username}</span>
@@ -106,22 +127,30 @@ export default function ZapfPage() {
       </header>
       {lastAction && <div className="shrink-0 bg-green-700 text-white text-center py-1 text-xs md:text-sm font-bold animate-pulse">✅ {lastAction}</div>}
       <main className="flex-1 flex items-center justify-center p-3 gap-3 md:gap-6 overflow-y-auto">
-        <div className="flex flex-col gap-2.5 md:gap-4">
-          <div className="text-xs text-red-400 font-bold text-center uppercase tracking-wider mb-0.5">Offen</div>
-          {buttonList.map((drink) => { const c = getPendingCount(drink); return (
-            <div key={`r-${drink}`} className={`w-24 h-24 md:w-36 md:h-36 rounded-2xl flex flex-col items-center justify-center border-3 md:border-4 shadow-xl transition-all p-1.5 text-center ${c > 0 ? "bg-red-600 border-red-400 animate-pulse scale-105" : "bg-red-900/40 border-red-800/60 opacity-80"}`}>
-              <span className="text-xs md:text-sm font-extrabold truncate w-full leading-tight">{drink}</span><span className="text-3xl md:text-5xl font-black mt-0.5">{c}</span>
-            </div>); })}
-        </div>
-        <div className="flex flex-col gap-2.5 md:gap-4">
-          <div className="text-xs text-green-400 font-bold text-center uppercase tracking-wider mb-0.5">Gezapft (diese Stelle)</div>
-          {buttonList.map((drink) => { const c = getPouredCount(drink); const p = getPendingCount(drink); return (
-            <button key={`g-${drink}`} onClick={() => handleComplete(drink)} className={`w-24 h-24 md:w-36 md:h-36 rounded-2xl flex flex-col items-center justify-center bg-green-600 hover:bg-green-500 active:bg-green-700 active:scale-95 border-3 md:border-4 border-green-400 shadow-xl transition-all p-1.5 text-center ${p === 0 ? "opacity-75 hover:opacity-100" : "ring-2 ring-green-300"}`}>
-              <span className="text-xs md:text-sm font-extrabold truncate w-full leading-tight">{drink}</span><span className="text-3xl md:text-5xl font-black mt-0.5">{c}</span><span className="text-[9px] md:text-[10px] opacity-80">Tippen zum Abhaken</span>
-            </button>); })}
-        </div>
+        {(() => {
+          const activeDrinks = buttonList.filter((d) => getPendingCount(d) > 0);
+          if (activeDrinks.length === 0) {
+            return <div className="text-gray-500 text-center text-lg">🍺 Keine offenen Bestellungen</div>;
+          }
+          return (<>
+            <div className="flex flex-col gap-2.5 md:gap-4">
+              <div className="text-xs text-red-400 font-bold text-center uppercase tracking-wider mb-0.5">Offen</div>
+              {activeDrinks.map((drink) => { const c = getPendingCount(drink); return (
+                <div key={`r-${drink}`} className={`w-24 h-24 md:w-36 md:h-36 rounded-2xl flex flex-col items-center justify-center border-3 md:border-4 shadow-xl transition-all p-1.5 text-center ${c > 0 ? "bg-red-600 border-red-400 animate-pulse scale-105" : "bg-red-900/40 border-red-800/60 opacity-80"}`}>
+                  <span className="text-xs md:text-sm font-extrabold truncate w-full leading-tight">{drink}</span><span className="text-3xl md:text-5xl font-black mt-0.5">{c}</span>
+                </div>); })}
+            </div>
+            <div className="flex flex-col gap-2.5 md:gap-4">
+              <div className="text-xs text-green-400 font-bold text-center uppercase tracking-wider mb-0.5">Gezapft (diese Stelle)</div>
+              {activeDrinks.map((drink) => { const c = getPouredCount(drink); const p = getPendingCount(drink); return (
+                <button key={`g-${drink}`} onClick={() => handleComplete(drink)} className={`w-24 h-24 md:w-36 md:h-36 rounded-2xl flex flex-col items-center justify-center bg-green-600 hover:bg-green-500 active:bg-green-700 active:scale-95 border-3 md:border-4 border-green-400 shadow-xl transition-all p-1.5 text-center ${p === 0 ? "opacity-75 hover:opacity-100" : "ring-2 ring-green-300"}`}>
+                  <span className="text-xs md:text-sm font-extrabold truncate w-full leading-tight">{drink}</span><span className="text-3xl md:text-5xl font-black mt-0.5">{c}</span><span className="text-[9px] md:text-[10px] opacity-80">Tippen zum Abhaken</span>
+                </button>); })}
+            </div>
+          </>);
+        })()}
       </main>
-      <footer className="shrink-0 bg-gray-800 border-t border-gray-700 px-3 py-1.5 text-center text-[11px] text-gray-400">TurboTap · Bier, Radler, Glühwein getrennt · Grün tippen = 1 gezapft</footer>
+      <footer className="shrink-0 bg-gray-800 border-t border-gray-700 px-3 py-1.5 text-center text-[11px] text-gray-400">TurboTap · Nur offene Getränke werden angezeigt · Grün tippen = 1 gezapft</footer>
     </div>
   );
 }
