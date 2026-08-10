@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
 import { orders, orderItems, drinks, cupCounters, salesPoints } from "@/db/schema";
 import { getSession } from "@/lib/auth";
-import { eq, sql, desc, and } from "drizzle-orm";
+import { eq, sql, desc, and, gte, lte } from "drizzle-orm";
 
 function bumpCup(tId: number, spId: number, size: string, givenCount: number) {
   return sql`
@@ -11,6 +11,16 @@ function bumpCup(tId: number, spId: number, size: string, givenCount: number) {
     ON CONFLICT (tenant_id, sales_point_id, size)
     DO UPDATE SET given = cup_counters.given + ${givenCount}
   `;
+}
+
+// Helper: Datum und Zeit zu ISO-String kombinieren
+function buildDateTime(date: string | null, time: string | null, type: "start" | "end"): Date | null {
+  if (!date && !time) return null;
+  
+  const d = date || (type === "start" ? "1970-01-01" : "9999-12-31");
+  const t = time || (type === "start" ? "00:00" : "23:59");
+  
+  return new Date(`${d}T${t}:00.000Z`);
 }
 
 export async function POST(req: NextRequest) {
@@ -113,11 +123,31 @@ export async function GET(req: NextRequest) {
     const url = new URL(req.url);
     const salesPointId = url.searchParams.get("salesPointId");
     const cashierNameFilter = url.searchParams.get("cashierName");
+    
+    // Zeitfilter-Parameter
+    const fromDate = url.searchParams.get("fromDate"); // Format: YYYY-MM-DD
+    const fromTime = url.searchParams.get("fromTime"); // Format: HH:MM
+    const toDate = url.searchParams.get("toDate");     // Format: YYYY-MM-DD
+    const toTime = url.searchParams.get("toTime");     // Format: HH:MM
 
     // Build filter conditions
     const conditions = [eq(orders.tenantId, tenantId)];
     if (salesPointId) conditions.push(eq(orders.salesPointId, parseInt(salesPointId)));
     if (cashierNameFilter) conditions.push(eq(orders.cashierName, cashierNameFilter));
+    
+    // Zeitfilter anwenden
+    if (fromDate || fromTime) {
+      const fromDateTime = buildDateTime(fromDate, fromTime, "start");
+      if (fromDateTime) {
+        conditions.push(gte(orders.createdAt, fromDateTime));
+      }
+    }
+    if (toDate || toTime) {
+      const toDateTime = buildDateTime(toDate, toTime, "end");
+      if (toDateTime) {
+        conditions.push(lte(orders.createdAt, toDateTime));
+      }
+    }
 
     const where = and(...conditions);
 
