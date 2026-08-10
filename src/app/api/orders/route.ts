@@ -126,6 +126,29 @@ export async function POST(req: NextRequest) {
     const foodItemsWithOrderId = orderFoodItemData.map((item) => ({ ...item, orderId: order.id }));
     if (foodItemsWithOrderId.length > 0) {
       await db.insert(orderFoodItems).values(foodItemsWithOrderId);
+      
+      // Speisen an die Küche senden (food_queue)
+      const { foodQueue } = await import("@/db/schema");
+      for (const foodItem of foodItemsWithOrderId) {
+        const existing = await db
+          .select()
+          .from(foodQueue)
+          .where(and(eq(foodQueue.tenantId, tenantId), eq(foodQueue.foodName, foodItem.foodName)))
+          .limit(1);
+        
+        if (existing.length > 0) {
+          await db
+            .update(foodQueue)
+            .set({ quantity: existing[0].quantity + foodItem.quantity })
+            .where(eq(foodQueue.id, existing[0].id));
+        } else {
+          await db.insert(foodQueue).values({
+            tenantId,
+            foodName: foodItem.foodName,
+            quantity: foodItem.quantity,
+          });
+        }
+      }
     }
 
     return NextResponse.json(
@@ -208,6 +231,22 @@ export async function GET(req: NextRequest) {
 
     const drinkSummary = await summaryQuery;
 
+    // Food-Summary
+    const foodSummaryQuery = db
+      .select({
+        foodId: orderFoodItems.foodId,
+        foodName: orderFoodItems.foodName,
+        totalQuantity: sql`sum(${orderFoodItems.quantity})`,
+        totalGross: sql`sum(${orderFoodItems.totalPriceGross})`,
+      })
+      .from(orderFoodItems)
+      .innerJoin(orders, eq(orderFoodItems.orderId, orders.id))
+      .where(summaryWhere)
+      .groupBy(orderFoodItems.foodId, orderFoodItems.foodName)
+      .orderBy(desc(sql`sum(${orderFoodItems.quantity})`));
+
+    const foodSummary = await foodSummaryQuery;
+
     const totalsQuery = db
       .select({
         totalOrders: sql`count(*)`,
@@ -221,9 +260,21 @@ export async function GET(req: NextRequest) {
 
     const orderTotals = await totalsQuery;
 
+    // Für jede Order: foodItems laden
+    const ordersWithFoods = await Promise.all(
+      allOrders.map(async (order) => {
+        const foods = await db
+          .select()
+          .from(orderFoodItems)
+          .where(eq(orderFoodItems.orderId, order.id));
+        return { ...order, foodItems: foods };
+      })
+    );
+
     return NextResponse.json({
-      orders: allOrders,
+      orders: ordersWithFoods,
       drinkSummary,
+      foodSummary,
       totals: orderTotals[0],
     });
   } catch (error) {
