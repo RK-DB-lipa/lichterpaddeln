@@ -242,10 +242,8 @@ export default function POSPage() {
             totalGross: grandTotal,
             depositReturnedCount: depositReturned
           });
-          // Speisen an Küche senden
-          if (foodItems.length > 0) {
-            await sendToKitchen();
-          }
+          // Speisen werden automatisch von der Orders API an die Küche gesendet
+          // Kein separater sendToKitchen() Aufruf nötig
         }
       } catch (err) { console.error(err); }
     }
