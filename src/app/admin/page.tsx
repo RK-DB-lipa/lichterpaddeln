@@ -63,7 +63,7 @@ export default function AdminPage() {
   const [showPourResetConfirm, setShowPourResetConfirm] = useState(false);
   const [cupCounters, setCupCounters] = useState<CupCounter[]>([]);
   const [showCupResetConfirm, setShowCupResetConfirm] = useState(false); const [cupResetTarget, setCupResetTarget] = useState("");
-  const [orderDetail, setOrderDetail] = useState<{ order: Order; items: OrderDetail[] } | null>(null);
+  const [orderDetail, setOrderDetail] = useState<{ order: Order; items: OrderDetail[]; foodItems?: Array<{ foodName: string; quantity: number; unitPriceGross: number; totalPriceGross: number }> } | null>(null);
   // Superadmin
   const [tenants, setTenants] = useState<TenantInfo[]>([]);
   const [showUsersTab, setShowUsersTab] = useState(false);
