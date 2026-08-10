@@ -61,7 +61,8 @@ export async function POST() {
         ORDER BY ordinal_position
       `);
       results.push('✓ Spalten der drinks-Tabelle:');
-      (schemaInfo as any[]).forEach(col => {
+      const rows = (schemaInfo as unknown) as any[];
+      rows.forEach(col => {
         results.push(`  - ${col.column_name}: ${col.data_type} (nullable: ${col.is_nullable}, default: ${col.column_default || 'none'})`);
       });
     } catch (err: any) {
