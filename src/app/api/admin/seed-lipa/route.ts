@@ -74,14 +74,18 @@ export async function POST(req: NextRequest) {
 
     for (const sp of adminSPs) {
       if (!lipaSPNames.has(sp.name)) {
-        await db.insert(salesPoints).values({ tenantId: lipaTenantId, name: sp.name, sortOrder: sp.sortOrder, isActive: true });
-        stats.salesPoints++;
+        try {
+          await db.insert(salesPoints).values({ tenantId: lipaTenantId, name: sp.name, sortOrder: sp.sortOrder, isActive: true });
+          stats.salesPoints++;
+        } catch { /* duplicate - skip */ }
       }
     }
     for (const sp of lipaSPs) {
       if (!adminSPNames.has(sp.name)) {
-        await db.insert(salesPoints).values({ tenantId: ADMIN_TENANT, name: sp.name, sortOrder: sp.sortOrder, isActive: true });
-        stats.salesPoints++;
+        try {
+          await db.insert(salesPoints).values({ tenantId: ADMIN_TENANT, name: sp.name, sortOrder: sp.sortOrder, isActive: true });
+          stats.salesPoints++;
+        } catch { /* duplicate - skip */ }
       }
     }
 
@@ -103,19 +107,24 @@ export async function POST(req: NextRequest) {
         .where(and(eq(drinks.tenantId, lipaTenantId), eq(drinks.name, drink.name))).limit(1);
       
       if (existingDrink.length === 0) {
-        const [newDrink] = await db.insert(drinks).values({
-          tenantId: lipaTenantId, name: drink.name, priceGross: drink.priceGross,
-          taxRate: drink.taxRate, hasDeposit: drink.hasDeposit, depositAmount: drink.depositAmount,
-          cupSize: drink.cupSize, color: drink.color, imageUrl: drink.imageUrl,
-          sortOrder: drink.sortOrder, isActive: drink.isActive, isPourDrink: drink.isPourDrink, group: drink.group,
-        }).returning();
-        
-        const assignments = await db.select().from(drinkSalesPoints).where(eq(drinkSalesPoints.drinkId, drink.id));
-        const mappedSPIds = assignments.map(a => adminIdToName.get(a.salesPointId)).filter((n): n is string => !!n).map(n => lipaNameToId.get(n)).filter((id): id is number => !!id);
-        if (mappedSPIds.length > 0) {
-          await db.insert(drinkSalesPoints).values(mappedSPIds.map(spId => ({ drinkId: newDrink.id, salesPointId: spId })));
+        try {
+          const [newDrink] = await db.insert(drinks).values({
+            tenantId: lipaTenantId, name: drink.name, priceGross: drink.priceGross,
+            taxRate: drink.taxRate, hasDeposit: drink.hasDeposit, depositAmount: drink.depositAmount,
+            cupSize: drink.cupSize, color: drink.color, imageUrl: drink.imageUrl,
+            sortOrder: drink.sortOrder, isActive: drink.isActive, isPourDrink: drink.isPourDrink, group: drink.group,
+          }).returning();
+          
+          const assignments = await db.select().from(drinkSalesPoints).where(eq(drinkSalesPoints.drinkId, drink.id));
+          const mappedSPIds = assignments.map(a => adminIdToName.get(a.salesPointId)).filter((n): n is string => !!n).map(n => lipaNameToId.get(n)).filter((id): id is number => !!id);
+          if (mappedSPIds.length > 0) {
+            await db.insert(drinkSalesPoints).values(mappedSPIds.map(spId => ({ drinkId: newDrink.id, salesPointId: spId })));
+          }
+          stats.drinks++;
+        } catch (insertErr) {
+          // Duplicate key - ignore and continue
+          console.log(`Drink '${drink.name}' already exists on tenant ${lipaTenantId}, skipping insert`);
         }
-        stats.drinks++;
       } else {
         await db.update(drinks).set({
           priceGross: drink.priceGross, taxRate: drink.taxRate, hasDeposit: drink.hasDeposit,
@@ -132,19 +141,23 @@ export async function POST(req: NextRequest) {
         .where(and(eq(drinks.tenantId, ADMIN_TENANT), eq(drinks.name, drink.name))).limit(1);
       
       if (existingDrink.length === 0) {
-        const [newDrink] = await db.insert(drinks).values({
-          tenantId: ADMIN_TENANT, name: drink.name, priceGross: drink.priceGross,
-          taxRate: drink.taxRate, hasDeposit: drink.hasDeposit, depositAmount: drink.depositAmount,
-          cupSize: drink.cupSize, color: drink.color, imageUrl: drink.imageUrl,
-          sortOrder: drink.sortOrder, isActive: drink.isActive, isPourDrink: drink.isPourDrink, group: drink.group,
-        }).returning();
-        
-        const assignments = await db.select().from(drinkSalesPoints).where(eq(drinkSalesPoints.drinkId, drink.id));
-        const mappedSPIds = assignments.map(a => lipaIdToName.get(a.salesPointId)).filter((n): n is string => !!n).map(n => adminNameToId.get(n)).filter((id): id is number => !!id);
-        if (mappedSPIds.length > 0) {
-          await db.insert(drinkSalesPoints).values(mappedSPIds.map(spId => ({ drinkId: newDrink.id, salesPointId: spId })));
+        try {
+          const [newDrink] = await db.insert(drinks).values({
+            tenantId: ADMIN_TENANT, name: drink.name, priceGross: drink.priceGross,
+            taxRate: drink.taxRate, hasDeposit: drink.hasDeposit, depositAmount: drink.depositAmount,
+            cupSize: drink.cupSize, color: drink.color, imageUrl: drink.imageUrl,
+            sortOrder: drink.sortOrder, isActive: drink.isActive, isPourDrink: drink.isPourDrink, group: drink.group,
+          }).returning();
+          
+          const assignments = await db.select().from(drinkSalesPoints).where(eq(drinkSalesPoints.drinkId, drink.id));
+          const mappedSPIds = assignments.map(a => lipaIdToName.get(a.salesPointId)).filter((n): n is string => !!n).map(n => adminNameToId.get(n)).filter((id): id is number => !!id);
+          if (mappedSPIds.length > 0) {
+            await db.insert(drinkSalesPoints).values(mappedSPIds.map(spId => ({ drinkId: newDrink.id, salesPointId: spId })));
+          }
+          stats.drinks++;
+        } catch (insertErr) {
+          console.log(`Drink '${drink.name}' already exists on admin tenant, skipping insert`);
         }
-        stats.drinks++;
       } else {
         await db.update(drinks).set({
           priceGross: drink.priceGross, taxRate: drink.taxRate, hasDeposit: drink.hasDeposit,
