@@ -38,6 +38,41 @@ const STATEMENTS = [
   // Alten Nettopreis entfernen (war NOT NULL, jetzt nicht mehr benötigt)
   `ALTER TABLE drinks ALTER COLUMN price_net DROP NOT NULL`,
 
+  // --- NEU: Food, Events und Zuordnungen ---
+  `CREATE TABLE IF NOT EXISTS foods (
+    id serial PRIMARY KEY,
+    tenant_id integer NOT NULL DEFAULT 0,
+    name varchar(200) NOT NULL,
+    price_gross real NOT NULL,
+    tax_rate real NOT NULL DEFAULT 19,
+    color varchar(30) NOT NULL DEFAULT '#10B981',
+    image_url text,
+    is_active boolean NOT NULL DEFAULT true,
+    is_cook_item boolean NOT NULL DEFAULT false,
+    sort_order integer NOT NULL DEFAULT 0,
+    group_name varchar(100),
+    created_at timestamp NOT NULL DEFAULT now()
+  )`,
+  `CREATE TABLE IF NOT EXISTS events (
+    id serial PRIMARY KEY,
+    tenant_id integer NOT NULL DEFAULT 0,
+    name varchar(200) NOT NULL,
+    start_date timestamp NOT NULL,
+    end_date timestamp NOT NULL,
+    is_active boolean NOT NULL DEFAULT true,
+    created_at timestamp NOT NULL DEFAULT now()
+  )`,
+  `CREATE TABLE IF NOT EXISTS event_drinks (
+    event_id integer NOT NULL REFERENCES events(id),
+    drink_id integer NOT NULL REFERENCES drinks(id),
+    PRIMARY KEY (event_id, drink_id)
+  )`,
+  `CREATE TABLE IF NOT EXISTS event_foods (
+    event_id integer NOT NULL REFERENCES events(id),
+    food_id integer NOT NULL REFERENCES foods(id),
+    PRIMARY KEY (event_id, food_id)
+  )`,
+
   // --- NEU: Getränke-Verkaufsstellen Zuordnung ---
   `CREATE TABLE IF NOT EXISTS drink_sales_points (
     drink_id integer NOT NULL REFERENCES drinks(id),
