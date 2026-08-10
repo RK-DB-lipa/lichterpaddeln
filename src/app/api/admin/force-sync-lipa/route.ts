@@ -58,8 +58,9 @@ export async function POST() {
         spCount++;
       }
       console.log(`[Force-Sync] ✓ ${spCount} Verkaufsstellen kopiert`);
-    } catch (err) {
-      errors.push(`Schritt 2 (Verkaufsstellen): ${err}`);
+    } catch (err: any) {
+      const errorMsg = err?.message || String(err) || 'Unbekannter Fehler';
+      errors.push(`Schritt 2 (Verkaufsstellen): ${errorMsg}`);
       console.error(`[Force-Sync] Fehler in Schritt 2:`, err);
     }
 
@@ -90,9 +91,16 @@ export async function POST() {
         drinkCount++;
       }
       console.log(`[Force-Sync] ✓ ${drinkCount} Getränke kopiert`);
-    } catch (err) {
-      errors.push(`Schritt 3 (Getränke): ${err}`);
+    } catch (err: any) {
+      const errorMsg = err?.message || String(err) || 'Unbekannter Fehler';
+      errors.push(`Schritt 3 (Getränke): ${errorMsg}`);
       console.error(`[Force-Sync] Fehler in Schritt 3:`, err);
+      console.error(`[Force-Sync] Error details:`, {
+        message: err?.message,
+        code: err?.code,
+        detail: err?.detail,
+        stack: err?.stack?.split('\n').slice(0, 3).join('\n'),
+      });
     }
 
     // === SCHRITT 4: Getränke-Verkaufsstellen-Zuordnungen kopieren ===
@@ -114,8 +122,9 @@ export async function POST() {
         }
       }
       console.log(`[Force-Sync] ✓ ${assignmentCount} Zuordnungen kopiert`);
-    } catch (err) {
-      errors.push(`Schritt 4 (Zuordnungen): ${err}`);
+    } catch (err: any) {
+      const errorMsg = err?.message || String(err) || 'Unbekannter Fehler';
+      errors.push(`Schritt 4 (Zuordnungen): ${errorMsg}`);
       console.error(`[Force-Sync] Fehler in Schritt 4:`, err);
     }
 
