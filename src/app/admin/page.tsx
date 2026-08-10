@@ -3,6 +3,8 @@
 import { useState, useEffect, useCallback } from "react";
 
 type Drink = { id: number; name: string; priceGross: number; taxRate: number; hasDeposit: boolean; depositAmount: number; cupSize: string; color: string; imageUrl: string | null; isActive: boolean; sortOrder: number; isPourDrink: boolean; salesPointIds?: number[]; group?: string | null; };
+type Food = { id: number; name: string; priceGross: number; taxRate: number; color: string; imageUrl: string | null; isActive: boolean; isCookItem: boolean; sortOrder: number; group?: string | null; };
+type Event = { id: number; name: string; startDate: string; endDate: string; isActive: boolean; drinkCount: number; foodCount: number; };
 type SalesPoint = { id: number; name: string; isActive: boolean; sortOrder: number; };
 type OrderItemSummary = { drinkName: string; totalQuantity: number; totalGross: number; totalDeposit: number; };
 type OrderTotals = { totalOrders: number; totalRevenue: number; totalDepositsCharged: number; totalDepositsReturned: number; netDeposits: number; };
@@ -21,6 +23,24 @@ export default function AdminPage() {
   const [editingDrink, setEditingDrink] = useState<Drink | null>(null);
   const [showDrinkForm, setShowDrinkForm] = useState(false); const [formData, setFormData] = useState(EMPTY_DRINK); const [formError, setFormError] = useState("");
   const [salesPoints, setSalesPoints] = useState<SalesPoint[]>([]);
+  
+  // Foods
+  const [foods, setFoods] = useState<Food[]>([]);
+  const [editingFood, setEditingFood] = useState<Food | null>(null);
+  const [showFoodForm, setShowFoodForm] = useState(false);
+  const [foodFormData, setFoodFormData] = useState({ name: "", priceGross: "", taxRate: "19", color: "#10B981", imageUrl: "", isCookItem: false, group: "" });
+  const [foodFormError, setFoodFormError] = useState("");
+  
+  // Events
+  const [events, setEvents] = useState<Event[]>([]);
+  const [editingEvent, setEditingEvent] = useState<Event | null>(null);
+  const [showEventForm, setShowEventForm] = useState(false);
+  const [eventFormData, setEventFormData] = useState({ name: "", startDate: "", endDate: "" });
+  const [eventFormError, setEventFormError] = useState("");
+  const [showEventAssignDialog, setShowEventAssignDialog] = useState(false);
+  const [assignEventId, setAssignEventId] = useState<number | null>(null);
+  const [assignType, setAssignType] = useState<"drinks" | "foods">("drinks");
+  const [assignedIds, setAssignedIds] = useState<number[]>([]);
   const [showSalesPointForm, setShowSalesPointForm] = useState(false); const [spFormName, setSpFormName] = useState(""); const [spFormError, setSpFormError] = useState("");
   const [editingSalesPoint, setEditingSalesPoint] = useState<SalesPoint | null>(null); const [spEditName, setSpEditName] = useState("");
   const [orders, setOrders] = useState<Order[]>([]);
@@ -68,6 +88,12 @@ export default function AdminPage() {
   const fetchGroups = useCallback(async () => {
     try { const r = await fetch("/api/groups"); if (r.ok) setGroups(await r.json()); } catch (err) { console.error(err); }
   }, []);
+  const fetchFoods = useCallback(async () => {
+    try { const r = await fetch("/api/foods"); if (r.ok) setFoods(await r.json()); } catch (err) { console.error(err); }
+  }, []);
+  const fetchEvents = useCallback(async () => {
+    try { const r = await fetch("/api/events"); if (r.ok) setEvents(await r.json()); } catch (err) { console.error(err); }
+  }, []);
   const fetchSalesPoints = useCallback(async () => {
     try { const r = await fetch("/api/sales-points"); if (r.ok) setSalesPoints(await r.json()); } catch (err) { console.error(err); }
   }, []);
@@ -111,7 +137,7 @@ export default function AdminPage() {
   }, []);
 
   useEffect(() => { checkAuth(); }, [checkAuth]);
-  useEffect(() => { if (session) { fetchDrinks(); fetchGroups(); fetchSalesPoints(); fetchOrders(); fetchPourStats(); fetchCupCounters(); fetchNames(); } }, [session, fetchDrinks, fetchGroups, fetchSalesPoints, fetchOrders, fetchPourStats, fetchCupCounters, fetchNames]);
+  useEffect(() => { if (session) { fetchDrinks(); fetchGroups(); fetchFoods(); fetchEvents(); fetchSalesPoints(); fetchOrders(); fetchPourStats(); fetchCupCounters(); fetchNames(); } }, [session, fetchDrinks, fetchGroups, fetchFoods, fetchEvents, fetchSalesPoints, fetchOrders, fetchPourStats, fetchCupCounters, fetchNames]);
   useEffect(() => { if (activeTab === "users" && isSuperAdmin && tenants.length === 0) fetchTenants(); }, [activeTab, isSuperAdmin]);
 
   async function handleLogin(e: React.FormEvent) {
@@ -150,6 +176,70 @@ export default function AdminPage() {
       fetchDrinks();
     }
     catch (err: any) { alert(err.message || "Fehler beim Verschieben"); }
+  }
+
+  // Food handlers
+  async function handleSaveFood(e: React.FormEvent) {
+    e.preventDefault(); setFoodFormError("");
+    if (!foodFormData.name || !foodFormData.priceGross) { setFoodFormError("Name und Bruttopreis erforderlich"); return; }
+    try {
+      const p = { name: foodFormData.name, priceGross: parseFloat(foodFormData.priceGross), taxRate: parseFloat(foodFormData.taxRate), color: foodFormData.color, imageUrl: foodFormData.imageUrl || null, isCookItem: foodFormData.isCookItem, group: foodFormData.group || null };
+      if (editingFood) await api(`/api/foods/${editingFood.id}`, "PUT", p);
+      else await api("/api/foods", "POST", p);
+      setShowFoodForm(false); setEditingFood(null); fetchFoods();
+    } catch (err: any) { setFoodFormError(err.message || "Fehler beim Speichern"); }
+  }
+
+  async function handleDeleteFood(id: number) {
+    if (!confirm("Food deaktivieren?")) return;
+    try { await api(`/api/foods/${id}`, "DELETE"); fetchFoods(); }
+    catch (err: any) { alert(err.message || "Fehler beim Löschen"); }
+  }
+
+  async function handleSortFood(foodId: number, action: "top" | "up" | "down" | "bottom") {
+    try { await api("/api/foods/sort", "POST", { foodId, action }); fetchFoods(); }
+    catch (err: any) { alert(err.message || "Fehler beim Verschieben"); }
+  }
+
+  function openEditFood(f: Food) {
+    setEditingFood(f);
+    setFoodFormData({ name: f.name, priceGross: f.priceGross.toString(), taxRate: f.taxRate.toString(), color: f.color, imageUrl: f.imageUrl || "", isCookItem: f.isCookItem, group: f.group || "" });
+    setFoodFormError(""); setShowFoodForm(true);
+  }
+
+  // Event handlers
+  async function handleSaveEvent(e: React.FormEvent) {
+    e.preventDefault(); setEventFormError("");
+    if (!eventFormData.name || !eventFormData.startDate || !eventFormData.endDate) { setEventFormError("Alle Felder erforderlich"); return; }
+    try {
+      if (editingEvent) await api(`/api/events/${editingEvent.id}`, "PUT", eventFormData);
+      else await api("/api/events", "POST", eventFormData);
+      setShowEventForm(false); setEditingEvent(null); fetchEvents();
+    } catch (err: any) { setEventFormError(err.message || "Fehler beim Speichern"); }
+  }
+
+  async function handleDeleteEvent(id: number) {
+    if (!confirm("Event wirklich löschen? Alle Zuordnungen gehen verloren!")) return;
+    try { await api(`/api/events/${id}`, "DELETE"); fetchEvents(); }
+    catch (err: any) { alert(err.message || "Fehler beim Löschen"); }
+  }
+
+  async function openAssignDialog(eventId: number, type: "drinks" | "foods") {
+    setAssignEventId(eventId); setAssignType(type);
+    try {
+      const r = await fetch(`/api/events/${type}?eventId=${eventId}`);
+      if (r.ok) setAssignedIds(await r.json());
+      else setAssignedIds([]);
+      setShowEventAssignDialog(true);
+    } catch { setAssignedIds([]); setShowEventAssignDialog(true); }
+  }
+
+  async function handleSaveAssign() {
+    if (!assignEventId) return;
+    try {
+      await api(`/api/events/${assignType}`, "POST", { eventId: assignEventId, [assignType === "drinks" ? "drinkIds" : "foodIds"]: assignedIds });
+      setShowEventAssignDialog(false); fetchEvents();
+    } catch (err: any) { alert(err.message || "Fehler beim Speichern"); }
   }
 
   async function handleChangeUsername() {
@@ -222,7 +312,7 @@ export default function AdminPage() {
       </header>
 
       <div className="flex border-b border-gray-700 shrink-0">
-        {[["drinks","🍺 Getränke"],["salesPoints","🏪 Verkaufsstellen"],["cups","🥤 Becher"],["orders","📊 Bestellungen"],...(isSuperAdmin ? [["users","👥 Nutzer"],["super","🔐 Super-Admin"]] : [["users","👥 Nutzer"]])].map(([tab,label]) => (
+        {[["drinks","🍺 Getränke"],["foods","🍔 Speisen"],["salesPoints","🏪 Verkaufsstellen"],["events","📅 Events"],["cups","🥤 Becher"],["orders","📊 Bestellungen"],...(isSuperAdmin ? [["users","👥 Nutzer"],["super","🔐 Super-Admin"]] : [["users","👥 Nutzer"]])].map(([tab,label]) => (
           <button key={tab} onClick={() => setActiveTab(tab)} className={`flex-1 py-3 text-center font-bold text-sm ${activeTab === tab ? "border-b-2 border-amber-500 text-amber-400" : "text-gray-400"}`}>{label}</button>
         ))}
       </div>
@@ -278,6 +368,53 @@ export default function AdminPage() {
           </div>
         )}
 
+        {/* FOODS */}
+        {activeTab === "foods" && (
+          <div>
+            <div className="flex justify-between items-center mb-4"><h2 className="text-lg font-bold">Speisen</h2>
+              <button onClick={() => { setEditingFood(null); setFoodFormData({ name: "", priceGross: "", taxRate: "19", color: "#10B981", imageUrl: "", isCookItem: false, group: "" }); setFoodFormError(""); setShowFoodForm(true); }} className="px-4 py-2 rounded-xl bg-green-600 hover:bg-green-500 font-bold text-sm">+ Neue Speise</button></div>
+            <div className="space-y-2">
+              {(() => {
+                let lastGroup: string | null = "__NONE__";
+                return foods.map((f) => {
+                  const currentGroup = f.group || null;
+                  const showSeparator = currentGroup && currentGroup !== lastGroup;
+                  if (currentGroup) lastGroup = currentGroup;
+                  return (
+                    <div key={f.id} className="contents">
+                      {showSeparator && (
+                        <div className="col-span-full flex items-center gap-2 my-2">
+                          <span className="h-px flex-1 bg-gray-600" />
+                          <span className="text-xs text-gray-400 font-bold uppercase tracking-wider">{currentGroup}</span>
+                          <span className="h-px flex-1 bg-gray-600" />
+                        </div>
+                      )}
+                      <div className="bg-gray-800 rounded-xl p-3 flex items-center gap-3 border border-gray-700 mb-2">
+                        <div className="w-10 h-10 rounded-lg shrink-0 flex items-center justify-center font-bold text-white text-xs" style={{backgroundColor:f.color}}>{f.name.charAt(0)}</div>
+                        <div className="flex-1 min-w-0">
+                          <div className="font-bold truncate flex items-center gap-2">{f.name}
+                            {f.isCookItem && <span className="text-[10px] bg-orange-600 px-1.5 py-0.5 rounded text-white">KOCH</span>}
+                          </div>
+                          <div className="text-xs text-gray-400"><span className="text-green-400 font-bold">{f.priceGross.toFixed(2)} €</span> · {f.taxRate}% MwSt.{f.group && <span className="ml-1 text-purple-400">· 📁 {f.group}</span>}</div>
+                        </div>
+                        <div className="flex flex-col gap-0.5">
+                          <button onClick={() => handleSortFood(f.id, "top")} className="px-1.5 py-0.5 rounded bg-blue-700 hover:bg-blue-600 text-[10px] font-bold" title="Ganz nach oben">⏫</button>
+                          <button onClick={() => handleSortFood(f.id, "up")} className="px-1.5 py-0.5 rounded bg-blue-700 hover:bg-blue-600 text-[10px] font-bold" title="Eins nach oben">⇡</button>
+                          <button onClick={() => handleSortFood(f.id, "down")} className="px-1.5 py-0.5 rounded bg-blue-700 hover:bg-blue-600 text-[10px] font-bold" title="Eins nach unten">⇣</button>
+                          <button onClick={() => handleSortFood(f.id, "bottom")} className="px-1.5 py-0.5 rounded bg-blue-700 hover:bg-blue-600 text-[10px] font-bold" title="Ganz nach unten">⏬</button>
+                        </div>
+                        <button onClick={() => openEditFood(f)} className="px-3 py-1.5 rounded-lg bg-gray-600 hover:bg-gray-500 text-sm">✏️</button>
+                        <button onClick={() => handleDeleteFood(f.id)} className="px-3 py-1.5 rounded-lg bg-red-900/50 hover:bg-red-800/50 text-sm">🗑️</button>
+                      </div>
+                    </div>
+                  );
+                });
+              })()}
+              {foods.length === 0 && <p className="text-gray-500 text-center py-8">Noch keine Speisen angelegt.</p>}
+            </div>
+          </div>
+        )}
+
         {/* SALES POINTS */}
         {activeTab === "salesPoints" && (
           <div>
@@ -302,6 +439,39 @@ export default function AdminPage() {
 
         {/* CUPS */}
         {activeTab === "cups" && <CupsTab cupCounters={cupCounters} getSPName={getSPName} cupTotals={cupTotals} setCupResetTarget={setCupResetTarget} setShowCupResetConfirm={setShowCupResetConfirm} />}
+
+        {/* EVENTS */}
+        {activeTab === "events" && (
+          <div>
+            <div className="flex justify-between items-center mb-4"><h2 className="text-lg font-bold">Events</h2>
+              <button onClick={() => { setEditingEvent(null); setEventFormData({ name: "", startDate: "", endDate: "" }); setEventFormError(""); setShowEventForm(true); }} className="px-4 py-2 rounded-xl bg-green-600 hover:bg-green-500 font-bold text-sm">+ Neues Event</button></div>
+            <div className="space-y-2">
+              {events.map((ev) => (
+                <div key={ev.id} className="bg-gray-800 rounded-xl p-4 border border-gray-700">
+                  <div className="flex justify-between items-start mb-2">
+                    <div>
+                      <div className="font-bold text-lg">{ev.name}</div>
+                      <div className="text-xs text-gray-400">
+                        {new Date(ev.startDate).toLocaleDateString("de-DE")} - {new Date(ev.endDate).toLocaleDateString("de-DE")}
+                      </div>
+                    </div>
+                    <div className="text-right text-xs">
+                      <div className="text-amber-400">🍺 {ev.drinkCount} Getränke</div>
+                      <div className="text-green-400">🍔 {ev.foodCount} Speisen</div>
+                    </div>
+                  </div>
+                  <div className="flex gap-2 flex-wrap">
+                    <button onClick={() => openAssignDialog(ev.id, "drinks")} className="px-3 py-1.5 rounded-lg bg-amber-700 hover:bg-amber-600 text-xs font-bold">🍺 Getränke zuweisen</button>
+                    <button onClick={() => openAssignDialog(ev.id, "foods")} className="px-3 py-1.5 rounded-lg bg-green-700 hover:bg-green-600 text-xs font-bold">🍔 Speisen zuweisen</button>
+                    <button onClick={() => { setEditingEvent(ev); setEventFormData({ name: ev.name, startDate: new Date(ev.startDate).toISOString().split("T")[0], endDate: new Date(ev.endDate).toISOString().split("T")[0] }); setEventFormError(""); setShowEventForm(true); }} className="px-3 py-1.5 rounded-lg bg-gray-600 hover:bg-gray-500 text-xs font-bold">✏️ Bearbeiten</button>
+                    <button onClick={() => handleDeleteEvent(ev.id)} className="px-3 py-1.5 rounded-lg bg-red-900/50 hover:bg-red-800/50 text-xs font-bold">🗑️ Löschen</button>
+                  </div>
+                </div>
+              ))}
+              {events.length === 0 && <p className="text-gray-500 text-center py-8">Noch keine Events angelegt.</p>}
+            </div>
+          </div>
+        )}
 
         {/* ORDERS */}
         {activeTab === "orders" && (
@@ -530,6 +700,70 @@ export default function AdminPage() {
               setPasswordTargetUser(null);
             }}
           />
+        </div>
+      )}
+
+      {/* Food Form Modal */}
+      {showFoodForm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
+          <form onSubmit={handleSaveFood} className="bg-gray-800 rounded-2xl p-6 w-full max-w-md shadow-2xl border border-gray-700">
+            <h2 className="text-xl font-bold mb-4">{editingFood ? "Speise bearbeiten" : "Neue Speise"}</h2>
+            {foodFormError && <div className="bg-red-900/50 text-red-300 text-sm p-3 rounded-lg mb-4 border border-red-700">{foodFormError}</div>}
+            <div className="space-y-4">
+              <div><label className="block text-sm text-gray-400 mb-1">Name *</label><input type="text" value={foodFormData.name} onChange={(e)=>setFoodFormData({...foodFormData, name: e.target.value})} className="w-full px-4 py-2.5 rounded-xl bg-gray-700 text-white border border-gray-600 focus:border-blue-500 focus:outline-none" /></div>
+              <div className="grid grid-cols-2 gap-3">
+                <div><label className="block text-sm text-gray-400 mb-1">Bruttopreis (€) *</label><input type="number" step="0.01" value={foodFormData.priceGross} onChange={(e)=>setFoodFormData({...foodFormData, priceGross: e.target.value})} className="w-full px-4 py-2.5 rounded-xl bg-gray-700 text-white border border-gray-600 focus:border-blue-500 focus:outline-none" /></div>
+                <div><label className="block text-sm text-gray-400 mb-1">MwSt.</label><select value={foodFormData.taxRate} onChange={(e)=>setFoodFormData({...foodFormData, taxRate: e.target.value})} className="w-full px-4 py-2.5 rounded-xl bg-gray-700 text-white border border-gray-600 focus:border-blue-500 focus:outline-none"><option value="19">19%</option><option value="7">7%</option></select></div>
+              </div>
+              <label className="flex items-center gap-2 cursor-pointer"><input type="checkbox" checked={foodFormData.isCookItem} onChange={(e)=>setFoodFormData({...foodFormData, isCookItem: e.target.checked})} className="w-5 h-5 rounded accent-orange-500" /><span className="text-sm text-gray-300">Kochartikel (erscheint im Koch-Frontend)</span></label>
+              <div><label className="block text-sm text-gray-400 mb-1">Gruppe (optional)</label><input type="text" value={foodFormData.group} onChange={(e)=>setFoodFormData({...foodFormData, group: e.target.value})} className="w-full px-4 py-2.5 rounded-xl bg-gray-700 text-white border border-gray-600 focus:border-blue-500 focus:outline-none" placeholder="z.B. Hauptgerichte, Desserts" /></div>
+              <div><label className="block text-sm text-gray-400 mb-1">Farbe</label><div className="flex items-center gap-3"><input type="color" value={foodFormData.color} onChange={(e)=>setFoodFormData({...foodFormData, color: e.target.value})} className="w-12 h-10 rounded-lg border border-gray-600 cursor-pointer" /><span className="text-sm text-gray-400 font-mono">{foodFormData.color}</span></div></div>
+            </div>
+            <div className="flex gap-3 mt-6"><button type="button" onClick={()=>setShowFoodForm(false)} className="flex-1 py-3 rounded-xl font-bold bg-gray-600 hover:bg-gray-500">Abbrechen</button><button type="submit" className="flex-1 py-3 rounded-xl font-bold bg-amber-600 hover:bg-amber-500">Speichern</button></div>
+          </form>
+        </div>
+      )}
+
+      {/* Event Form Modal */}
+      {showEventForm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
+          <form onSubmit={handleSaveEvent} className="bg-gray-800 rounded-2xl p-6 w-full max-w-md shadow-2xl border border-gray-700">
+            <h2 className="text-xl font-bold mb-4">{editingEvent ? "Event bearbeiten" : "Neues Event"}</h2>
+            {eventFormError && <div className="bg-red-900/50 text-red-300 text-sm p-3 rounded-lg mb-4 border border-red-700">{eventFormError}</div>}
+            <div className="space-y-4">
+              <div><label className="block text-sm text-gray-400 mb-1">Name *</label><input type="text" value={eventFormData.name} onChange={(e)=>setEventFormData({...eventFormData, name: e.target.value})} className="w-full px-4 py-2.5 rounded-xl bg-gray-700 text-white border border-gray-600 focus:border-blue-500 focus:outline-none" /></div>
+              <div className="grid grid-cols-2 gap-3">
+                <div><label className="block text-sm text-gray-400 mb-1">Startdatum *</label><input type="date" value={eventFormData.startDate} onChange={(e)=>setEventFormData({...eventFormData, startDate: e.target.value})} className="w-full px-4 py-2.5 rounded-xl bg-gray-700 text-white border border-gray-600 focus:border-blue-500 focus:outline-none" /></div>
+                <div><label className="block text-sm text-gray-400 mb-1">Enddatum *</label><input type="date" value={eventFormData.endDate} onChange={(e)=>setEventFormData({...eventFormData, endDate: e.target.value})} className="w-full px-4 py-2.5 rounded-xl bg-gray-700 text-white border border-gray-600 focus:border-blue-500 focus:outline-none" /></div>
+              </div>
+            </div>
+            <div className="flex gap-3 mt-6"><button type="button" onClick={()=>setShowEventForm(false)} className="flex-1 py-3 rounded-xl font-bold bg-gray-600 hover:bg-gray-500">Abbrechen</button><button type="submit" className="flex-1 py-3 rounded-xl font-bold bg-amber-600 hover:bg-amber-500">Speichern</button></div>
+          </form>
+        </div>
+      )}
+
+      {/* Event Assign Dialog */}
+      {showEventAssignDialog && assignEventId && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
+          <div className="bg-gray-800 rounded-2xl p-6 w-full max-w-2xl shadow-2xl border border-gray-700 max-h-[80vh] flex flex-col">
+            <h2 className="text-xl font-bold mb-4">{assignType === "drinks" ? "🍺 Getränke" : "🍔 Speisen"} für Event zuweisen</h2>
+            <div className="flex-1 overflow-y-auto mb-4">
+              <div className="grid grid-cols-2 gap-2">
+                {(assignType === "drinks" ? drinks : foods).map((item: any) => (
+                  <label key={item.id} className={`flex items-center gap-2 p-3 rounded-xl border cursor-pointer ${assignedIds.includes(item.id) ? "bg-blue-900/50 border-blue-500" : "bg-gray-700/50 border-gray-600 hover:border-gray-500"}`}>
+                    <input type="checkbox" checked={assignedIds.includes(item.id)} onChange={(e) => {
+                      if (e.target.checked) setAssignedIds([...assignedIds, item.id]);
+                      else setAssignedIds(assignedIds.filter(id => id !== item.id));
+                    }} className="w-4 h-4 rounded accent-blue-500" />
+                    <span className="flex-1">{item.name}</span>
+                    <span className="text-xs text-gray-400">{item.priceGross.toFixed(2)} €</span>
+                  </label>
+                ))}
+              </div>
+              {(assignType === "drinks" ? drinks : foods).length === 0 && <p className="text-gray-500 text-center py-8">Keine {assignType === "drinks" ? "Getränke" : "Speisen"} vorhanden.</p>}
+            </div>
+            <div className="flex gap-3"><button onClick={()=>setShowEventAssignDialog(false)} className="flex-1 py-3 rounded-xl font-bold bg-gray-600 hover:bg-gray-500">Abbrechen</button><button onClick={handleSaveAssign} className="flex-1 py-3 rounded-xl font-bold bg-amber-600 hover:bg-amber-500">Speichern ({assignedIds.length} ausgewählt)</button></div>
+          </div>
         </div>
       )}
     </div>
