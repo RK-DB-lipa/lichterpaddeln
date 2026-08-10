@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from "react";
 
 type Food = { id: number; name: string; priceGross: number; taxRate: number; color: string; imageUrl: string | null; isCookItem: boolean; group?: string | null; };
-type QueueItem = { id: number; foodName: string; pendingCount: number; };
+type QueueItem = { id: number; foodName: string; quantity: number; };
 type StatItem = { foodName: string; totalCooked: number; };
 
 const DEFAULT_COOK_BUTTONS = ["Hauptgericht", "Beilage", "Dessert"];
@@ -115,9 +115,9 @@ export default function KochPage() {
     const bl = btn.toLowerCase();
     let c = 0;
     rawQueue.forEach((q) => {
-      if (q.pendingCount <= 0) return;
+      if (q.quantity <= 0) return;
       const ql = q.foodName.toLowerCase();
-      if (ql === bl || ql.includes(bl) || bl.includes(ql)) c += q.pendingCount;
+      if (ql === bl || ql.includes(bl) || bl.includes(ql)) c += q.quantity;
     });
     return c;
   };
@@ -137,7 +137,7 @@ export default function KochPage() {
       const ql = q.foodName.toLowerCase();
       const fl = foodName.toLowerCase();
       const m = ql === fl || ql.includes(fl) || fl.includes(ql);
-      return (m && q.pendingCount > 0) ? { ...q, pendingCount: q.pendingCount - 1 } : q;
+      return (m && q.quantity > 0) ? { ...q, quantity: q.quantity - 1 } : q;
     }));
     try {
       const r = await fetch("/api/food/complete", {
