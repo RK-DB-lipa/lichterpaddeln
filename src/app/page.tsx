@@ -86,14 +86,35 @@ export default function POSPage() {
     setOrderItems(new Map()); setDepositReturned02(0); setDepositReturned04(0); setPourSent(false); setRemoveMode(false); setShowCancelConfirm(false);
   }, [pourSent, selectedSalesPointId, orderItems, drinks]);
 
-  // FIX: Korrekte Preis-Kalkulation mit expliziter Rundung
+  // FIX: Korrekte Preis-Kalkulation mit Integer-Cents (verhindet Float-Ungenauigkeiten)
   const items = Array.from(orderItems.values());
-  const totalDrinkGross = +items.reduce((s, i) => s + (i.unitPriceGross * i.quantity), 0).toFixed(2);
-  const totalDepositCharged = +items.reduce((s, i) => s + (i.unitDeposit * i.quantity), 0).toFixed(2);
+  
+  // Helper: Euro zu Cents konvertieren
+  const toCents = (euros: number) => Math.round(euros * 100);
+  const toEuros = (cents: number) => +(cents / 100).toFixed(2);
+  
+  // Alle Berechnungen in Cents (Integer-Arithmetik ist exakt)
+  const totalDrinkGrossCents = items.reduce((sum, i) => {
+    const itemCents = toCents(i.unitPriceGross) * i.quantity;
+    return sum + itemCents;
+  }, 0);
+  
+  const totalDepositChargedCents = items.reduce((sum, i) => {
+    const itemCents = toCents(i.unitDeposit) * i.quantity;
+    return sum + itemCents;
+  }, 0);
+  
   const depositReturned = depositReturned02 + depositReturned04;
-  const totalDepositReturn = +(depositReturned * DEPOSIT_PER_RETURN).toFixed(2);
-  const netDeposit = +(totalDepositCharged - totalDepositReturn).toFixed(2);
-  const grandTotal = +(totalDrinkGross + netDeposit).toFixed(2);
+  const totalDepositReturnCents = toCents(depositReturned * DEPOSIT_PER_RETURN);
+  const netDepositCents = totalDepositChargedCents - totalDepositReturnCents;
+  const grandTotalCents = totalDrinkGrossCents + netDepositCents;
+  
+  // Zurück zu Euro konvertieren
+  const totalDrinkGross = toEuros(totalDrinkGrossCents);
+  const totalDepositCharged = toEuros(totalDepositChargedCents);
+  const totalDepositReturn = toEuros(totalDepositReturnCents);
+  const netDeposit = toEuros(netDepositCents);
+  const grandTotal = toEuros(grandTotalCents);
   const hasItems = items.length > 0 || depositReturned > 0;
   const totalDrinksCount = items.reduce((s, i) => s + i.quantity, 0);
   const pourItemCount = items.filter((i) => drinks.find((d) => d.id === i.drinkId)?.isPourDrink).reduce((s, i) => s + i.quantity, 0);
