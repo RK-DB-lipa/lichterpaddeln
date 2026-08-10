@@ -105,4 +105,43 @@ export const cupCounters = pgTable("cup_counters", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
+// Food items (meals, snacks, etc.)
+export const foods = pgTable("foods", {
+  id: serial("id").primaryKey(),
+  tenantId: integer("tenant_id").notNull().default(0),
+  name: varchar("name", { length: 200 }).notNull(),
+  priceGross: real("price_gross").notNull(),
+  taxRate: real("tax_rate").notNull().default(19),
+  color: varchar("color", { length: 30 }).notNull().default("#10B981"),
+  imageUrl: text("image_url"),
+  isActive: boolean("is_active").notNull().default(true),
+  isCookItem: boolean("is_cook_item").notNull().default(false),
+  sortOrder: integer("sort_order").notNull().default(0),
+  group: varchar("group_name", { length: 100 }),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+// Events (multi-day events with date ranges)
+export const events = pgTable("events", {
+  id: serial("id").primaryKey(),
+  tenantId: integer("tenant_id").notNull().default(0),
+  name: varchar("name", { length: 200 }).notNull(),
+  startDate: timestamp("start_date").notNull(),
+  endDate: timestamp("end_date").notNull(),
+  isActive: boolean("is_active").notNull().default(true),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+// Event-Drinks assignment (which drinks are available for which event)
+export const eventDrinks = pgTable("event_drinks", {
+  eventId: integer("event_id").notNull().references(() => events.id),
+  drinkId: integer("drink_id").notNull().references(() => drinks.id),
+});
+
+// Event-Food assignment (which foods are available for which event)
+export const eventFoods = pgTable("event_foods", {
+  eventId: integer("event_id").notNull().references(() => events.id),
+  foodId: integer("food_id").notNull().references(() => foods.id),
+});
+
 export type DrinkSummary = { drinkId: number; drinkName: string; totalQuantity: number; totalGross: number; totalDeposit: number; };
