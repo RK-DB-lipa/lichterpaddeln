@@ -7,8 +7,9 @@ type Food = { id: number; name: string; priceGross: number; taxRate: number; col
 type Event = { id: number; name: string; startDate: string; endDate: string; isActive: boolean; drinkCount: number; foodCount: number; };
 type SalesPoint = { id: number; name: string; isActive: boolean; sortOrder: number; };
 type OrderItemSummary = { drinkName: string; totalQuantity: number; totalGross: number; totalDeposit: number; };
+type FoodItemSummary = { foodName: string; totalQuantity: number; totalGross: number };
 type OrderTotals = { totalOrders: number; totalRevenue: number; totalDepositsCharged: number; totalDepositsReturned: number; netDeposits: number; };
-type Order = { id: number; salesPointId: number; totalGross: number; totalDeposit: number; totalDepositReturned: number; netDeposit: number; cashierName?: string; createdAt: string; };
+type Order = { id: number; salesPointId: number; totalGross: number; totalDeposit: number; totalDepositReturned: number; netDeposit: number; cashierName?: string; createdAt: string; foodItems?: Array<{ foodName: string; quantity: number; unitPriceGross: number; totalPriceGross: number }> };
 type OrderDetail = { drinkName: string; quantity: number; unitPriceGross: number; unitDeposit: number; totalPriceGross: number; totalDeposit: number; };
 type PourStat = { drinkName: string; totalPoured: number; };
 type CupCounter = { salesPointId: number; given02: number; given04: number; returned02: number; returned04: number; };
@@ -45,6 +46,7 @@ export default function AdminPage() {
   const [editingSalesPoint, setEditingSalesPoint] = useState<SalesPoint | null>(null); const [spEditName, setSpEditName] = useState("");
   const [orders, setOrders] = useState<Order[]>([]);
   const [drinkSummary, setDrinkSummary] = useState<OrderItemSummary[]>([]);
+  const [foodSummary, setFoodSummary] = useState<FoodItemSummary[]>([]);
   const [totals, setTotals] = useState<OrderTotals | null>(null);
   const [activeTab, setActiveTab] = useState<string>("drinks");
   const [orderFilter, setOrderFilter] = useState<string>("");
@@ -117,7 +119,13 @@ export default function AdminPage() {
       if (toTime) params.set("toTime", toTime);
       const qs = params.toString();
       const r = await fetch(qs ? `/api/orders?${qs}` : "/api/orders");
-      if (r.ok) { const d = await r.json(); setOrders(d.orders || []); setDrinkSummary(d.drinkSummary || []); setTotals(d.totals || null); }
+      if (r.ok) { 
+        const d = await r.json(); 
+        setOrders(d.orders || []); 
+        setDrinkSummary(d.drinkSummary || []); 
+        setFoodSummary(d.foodSummary || []);
+        setTotals(d.totals || null); 
+      }
     } catch (err) { console.error(err); }
   }, [orderFilter, cashierFilter, fromDate, fromTime, toDate, toTime]);
   const fetchPourStats = useCallback(async () => {
@@ -543,9 +551,16 @@ export default function AdminPage() {
             )}
 
             {drinkSummary.length > 0 && (
-              <div className="mb-6"><h3 className="text-md font-bold mb-2">Zusammenfassung</h3>
+              <div className="mb-6"><h3 className="text-md font-bold mb-2">🍺 Getränke-Zusammenfassung</h3>
                 <div className="bg-gray-800 rounded-xl border border-gray-700 overflow-hidden"><table className="w-full text-sm"><thead><tr className="text-gray-400 text-xs bg-gray-700/50"><th className="text-left p-3 font-medium">Getränk</th><th className="text-right p-3 font-medium">Menge</th><th className="text-right p-3 font-medium">Umsatz</th><th className="text-right p-3 font-medium">Pfand</th></tr></thead>
                   <tbody>{drinkSummary.map((item,i)=>(<tr key={i} className="border-t border-gray-700/50"><td className="p-3 font-medium">{item.drinkName}</td><td className="p-3 text-right tabular-nums">{item.totalQuantity}</td><td className="p-3 text-right tabular-nums text-green-400">{(item.totalGross||0).toFixed(2)} €</td><td className="p-3 text-right tabular-nums text-amber-400">{(item.totalDeposit||0).toFixed(2)} €</td></tr>))}</tbody></table></div>
+              </div>
+            )}
+
+            {foodSummary.length > 0 && (
+              <div className="mb-6"><h3 className="text-md font-bold mb-2">🍔 Speisen-Zusammenfassung</h3>
+                <div className="bg-gray-800 rounded-xl border border-gray-700 overflow-hidden"><table className="w-full text-sm"><thead><tr className="text-gray-400 text-xs bg-gray-700/50"><th className="text-left p-3 font-medium">Speise</th><th className="text-right p-3 font-medium">Menge</th><th className="text-right p-3 font-medium">Umsatz</th></tr></thead>
+                  <tbody>{foodSummary.map((item,i)=>(<tr key={i} className="border-t border-gray-700/50"><td className="p-3 font-medium">{item.foodName}</td><td className="p-3 text-right tabular-nums">{item.totalQuantity}</td><td className="p-3 text-right tabular-nums text-green-400">{(item.totalGross||0).toFixed(2)} €</td></tr>))}</tbody></table></div>
               </div>
             )}
 
@@ -636,12 +651,24 @@ export default function AdminPage() {
               {orderDetail.order.cashierName && <p className="text-xs text-green-400">👤 {orderDetail.order.cashierName}</p>}
             </div>
             <div className="flex-1 overflow-y-auto p-4 space-y-2">
+              {orderDetail.items.length > 0 && <h4 className="font-bold text-sm text-gray-400 mt-2">🍺 Getränke</h4>}
               {orderDetail.items.map((item,i)=>(
                 <div key={i} className="flex justify-between items-center border-b border-gray-700/40 pb-2">
                   <span className="font-medium">{item.quantity}× {item.drinkName}</span>
                   <span className="tabular-nums font-semibold">{(item.unitPriceGross * item.quantity).toFixed(2)} €</span>
                 </div>
               ))}
+              {orderDetail.order.foodItems && orderDetail.order.foodItems.length > 0 && (
+                <>
+                  <h4 className="font-bold text-sm text-gray-400 mt-4">🍔 Speisen</h4>
+                  {orderDetail.order.foodItems.map((item,i)=>(
+                    <div key={`food-${i}`} className="flex justify-between items-center border-b border-gray-700/40 pb-2">
+                      <span className="font-medium">{item.quantity}× {item.foodName}</span>
+                      <span className="tabular-nums font-semibold">{item.totalPriceGross.toFixed(2)} €</span>
+                    </div>
+                  ))}
+                </>
+              )}
               {orderDetail.order.totalDeposit > 0 && <div className="text-amber-400 flex justify-between text-sm pt-2"><span>Pfand</span><span className="tabular-nums">+{orderDetail.order.totalDeposit.toFixed(2)} €</span></div>}
               {orderDetail.order.totalDepositReturned > 0 && <div className="text-red-400 flex justify-between text-sm"><span>Pfand zurück</span><span className="tabular-nums">-{orderDetail.order.totalDepositReturned.toFixed(2)} €</span></div>}
               <div className="border-t border-gray-600 pt-2 mt-2 flex justify-between text-lg font-bold"><span>Gesamt</span><span className="text-green-400 tabular-nums">{orderDetail.order.totalGross.toFixed(2)} €</span></div>
