@@ -76,6 +76,10 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ success: true, message: "Passwort geändert" });
     } else {
       // Normaler User (managedUsers Tabelle)
+      if (!session.userId) {
+        return NextResponse.json({ error: "User nicht gefunden" }, { status: 404 });
+      }
+      
       const user = await db
         .select()
         .from(managedUsers)
