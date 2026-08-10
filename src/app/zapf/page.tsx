@@ -110,7 +110,7 @@ export default function ZapfPage() {
   }
 
   return (
-    <div className="h-screen flex flex-col bg-gray-900 text-white overflow-hidden select-none">
+    <div className="h-screen flex flex-col bg-gray-900 text-white overflow-hidden select-none logo-watermark">
       <header className="flex items-center justify-between px-3 py-2 bg-gray-800 border-b border-gray-700 shrink-0">
         <div className="flex items-center gap-2">
           <img src="/images/turbotap-logo.png" alt="" className="w-6 h-6 rounded" />
