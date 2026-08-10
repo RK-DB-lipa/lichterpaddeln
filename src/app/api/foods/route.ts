@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
 import { foods } from "@/db/schema";
 import { getSession, getAuthAdmin } from "@/lib/auth";
-import { eq, and } from "drizzle-orm";
+import { eq, and, sql } from "drizzle-orm";
 
 // GET: Liefert aktive Foods für den aktuellen Tenant
 export async function GET() {
