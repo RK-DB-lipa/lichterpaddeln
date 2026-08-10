@@ -29,6 +29,7 @@ export const drinks = pgTable("drinks", {
   id: serial("id").primaryKey(),
   tenantId: integer("tenant_id").notNull().default(0),
   name: varchar("name", { length: 200 }).notNull(),
+  priceNet: real("price_net"), // Jetzt optional (war früher NOT NULL)
   priceGross: real("price_gross").notNull(),
   taxRate: real("tax_rate").notNull().default(19),
   hasDeposit: boolean("has_deposit").notNull().default(true),
