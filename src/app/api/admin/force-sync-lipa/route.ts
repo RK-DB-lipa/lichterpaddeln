@@ -23,88 +23,113 @@ export async function POST() {
     const ADMIN_TENANT = 0;
 
     console.log(`[Force-Sync] Admin=${ADMIN_TENANT}, Lipa=${LIPA_TENANT}`);
+    const errors: string[] = [];
 
     // === SCHRITT 1: Alle bestehenden Daten auf Lipa löschen ===
-    console.log(`[Force-Sync] Lösche alte Daten auf Tenant ${LIPA_TENANT}...`);
-    
-    await db.delete(drinkSalesPoints).where(
-      sql`drink_id IN (SELECT id FROM drinks WHERE tenant_id = ${LIPA_TENANT})`
-    );
-    await db.delete(drinks).where(eq(drinks.tenantId, LIPA_TENANT));
-    await db.delete(salesPoints).where(eq(salesPoints.tenantId, LIPA_TENANT));
+    try {
+      console.log(`[Force-Sync] Schritt 1: Lösche alte Daten auf Tenant ${LIPA_TENANT}...`);
+      
+      await db.delete(drinkSalesPoints).where(
+        sql`drink_id IN (SELECT id FROM drinks WHERE tenant_id = ${LIPA_TENANT})`
+      );
+      await db.delete(drinks).where(eq(drinks.tenantId, LIPA_TENANT));
+      await db.delete(salesPoints).where(eq(salesPoints.tenantId, LIPA_TENANT));
+      console.log(`[Force-Sync] ✓ Alte Daten gelöscht`);
+    } catch (err) {
+      errors.push(`Schritt 1 (Löschen): ${err}`);
+      console.error(`[Force-Sync] Fehler in Schritt 1:`, err);
+    }
 
     // === SCHRITT 2: Verkaufsstellen von Admin zu Lipa kopieren ===
-    console.log(`[Force-Sync] Kopiere Verkaufsstellen...`);
-    const adminSPs = await db.select().from(salesPoints).where(eq(salesPoints.tenantId, ADMIN_TENANT));
-    const spIdMap = new Map<number, number>(); // admin SP-ID → Lipa SP-ID
+    const spIdMap = new Map<number, number>();
+    let spCount = 0;
+    try {
+      console.log(`[Force-Sync] Schritt 2: Kopiere Verkaufsstellen...`);
+      const adminSPs = await db.select().from(salesPoints).where(eq(salesPoints.tenantId, ADMIN_TENANT));
 
-    for (const sp of adminSPs) {
-      const [newSP] = await db.insert(salesPoints).values({
-        tenantId: LIPA_TENANT,
-        name: sp.name,
-        sortOrder: sp.sortOrder,
-        isActive: true,
-      }).returning();
-      spIdMap.set(sp.id, newSP.id);
+      for (const sp of adminSPs) {
+        const [newSP] = await db.insert(salesPoints).values({
+          tenantId: LIPA_TENANT,
+          name: sp.name,
+          sortOrder: sp.sortOrder,
+          isActive: true,
+        }).returning();
+        spIdMap.set(sp.id, newSP.id);
+        spCount++;
+      }
+      console.log(`[Force-Sync] ✓ ${spCount} Verkaufsstellen kopiert`);
+    } catch (err) {
+      errors.push(`Schritt 2 (Verkaufsstellen): ${err}`);
+      console.error(`[Force-Sync] Fehler in Schritt 2:`, err);
     }
-
-    console.log(`[Force-Sync] ${adminSPs.length} Verkaufsstellen kopiert`);
 
     // === SCHRITT 3: Getränke von Admin zu Lipa kopieren ===
-    console.log(`[Force-Sync] Kopiere Getränke...`);
-    const adminDrinks = await db.select().from(drinks).where(eq(drinks.tenantId, ADMIN_TENANT));
-    const drinkIdMap = new Map<number, number>(); // admin Drink-ID → Lipa Drink-ID
+    const drinkIdMap = new Map<number, number>();
+    let drinkCount = 0;
+    try {
+      console.log(`[Force-Sync] Schritt 3: Kopiere Getränke...`);
+      const adminDrinks = await db.select().from(drinks).where(eq(drinks.tenantId, ADMIN_TENANT));
 
-    for (const drink of adminDrinks) {
-      const [newDrink] = await db.insert(drinks).values({
-        tenantId: LIPA_TENANT,
-        name: drink.name,
-        priceGross: drink.priceGross,
-        taxRate: drink.taxRate,
-        hasDeposit: drink.hasDeposit,
-        depositAmount: drink.depositAmount,
-        cupSize: drink.cupSize,
-        color: drink.color,
-        imageUrl: drink.imageUrl,
-        sortOrder: drink.sortOrder,
-        isActive: drink.isActive,
-        isPourDrink: drink.isPourDrink,
-        group: drink.group,
-      }).returning();
-      drinkIdMap.set(drink.id, newDrink.id);
+      for (const drink of adminDrinks) {
+        const [newDrink] = await db.insert(drinks).values({
+          tenantId: LIPA_TENANT,
+          name: drink.name,
+          priceGross: drink.priceGross,
+          taxRate: drink.taxRate,
+          hasDeposit: drink.hasDeposit,
+          depositAmount: drink.depositAmount,
+          cupSize: drink.cupSize,
+          color: drink.color,
+          imageUrl: drink.imageUrl,
+          sortOrder: drink.sortOrder,
+          isActive: drink.isActive,
+          isPourDrink: drink.isPourDrink,
+          group: drink.group,
+        }).returning();
+        drinkIdMap.set(drink.id, newDrink.id);
+        drinkCount++;
+      }
+      console.log(`[Force-Sync] ✓ ${drinkCount} Getränke kopiert`);
+    } catch (err) {
+      errors.push(`Schritt 3 (Getränke): ${err}`);
+      console.error(`[Force-Sync] Fehler in Schritt 3:`, err);
     }
-
-    console.log(`[Force-Sync] ${adminDrinks.length} Getränke kopiert`);
 
     // === SCHRITT 4: Getränke-Verkaufsstellen-Zuordnungen kopieren ===
-    console.log(`[Force-Sync] Kopiere Zuordnungen...`);
-    const adminAssignments = await db.select().from(drinkSalesPoints);
     let assignmentCount = 0;
+    try {
+      console.log(`[Force-Sync] Schritt 4: Kopiere Zuordnungen...`);
+      const adminAssignments = await db.select().from(drinkSalesPoints);
 
-    for (const assignment of adminAssignments) {
-      const newDrinkId = drinkIdMap.get(assignment.drinkId);
-      const newSPId = spIdMap.get(assignment.salesPointId);
-      
-      if (newDrinkId && newSPId) {
-        await db.insert(drinkSalesPoints).values({
-          drinkId: newDrinkId,
-          salesPointId: newSPId,
-        });
-        assignmentCount++;
+      for (const assignment of adminAssignments) {
+        const newDrinkId = drinkIdMap.get(assignment.drinkId);
+        const newSPId = spIdMap.get(assignment.salesPointId);
+        
+        if (newDrinkId && newSPId) {
+          await db.insert(drinkSalesPoints).values({
+            drinkId: newDrinkId,
+            salesPointId: newSPId,
+          });
+          assignmentCount++;
+        }
       }
+      console.log(`[Force-Sync] ✓ ${assignmentCount} Zuordnungen kopiert`);
+    } catch (err) {
+      errors.push(`Schritt 4 (Zuordnungen): ${err}`);
+      console.error(`[Force-Sync] Fehler in Schritt 4:`, err);
     }
 
-    console.log(`[Force-Sync] ${assignmentCount} Zuordnungen kopiert`);
-
     // === ERGEBNIS ===
+    const hasErrors = errors.length > 0;
     return NextResponse.json({
-      success: true,
-      message: `Force-Sync abgeschlossen!`,
+      success: !hasErrors,
+      message: hasErrors ? `Force-Sync mit Fehlern abgeschlossen!` : `Force-Sync erfolgreich abgeschlossen!`,
+      errors: errors,
       stats: {
         adminTenant: ADMIN_TENANT,
         lipaTenant: LIPA_TENANT,
-        salesPoints: adminSPs.length,
-        drinks: adminDrinks.length,
+        salesPoints: spCount,
+        drinks: drinkCount,
         assignments: assignmentCount,
       },
     });
