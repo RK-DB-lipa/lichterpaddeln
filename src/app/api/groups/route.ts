@@ -91,7 +91,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ success: true, message: "Keine Änderung" });
     }
 
-    // Neue Gruppen-Reihenfolge erstellen
+    // Neue Gruppen-Reihenfolge erstellen und hoffen
     const newOrder = [...uniqueGroups];
     const [moved] = newOrder.splice(currentIndex, 1);
     newOrder.splice(targetIndex, 0, moved);
