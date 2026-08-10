@@ -72,6 +72,29 @@ const STATEMENTS = [
     food_id integer NOT NULL REFERENCES foods(id),
     PRIMARY KEY (event_id, food_id)
   )`,
+  `CREATE TABLE IF NOT EXISTS food_queue (
+    id serial PRIMARY KEY,
+    tenant_id integer NOT NULL DEFAULT 0,
+    food_name varchar(200) NOT NULL,
+    quantity integer NOT NULL DEFAULT 0,
+    created_at timestamp NOT NULL DEFAULT now()
+  )`,
+  `CREATE TABLE IF NOT EXISTS food_stats (
+    id serial PRIMARY KEY,
+    tenant_id integer NOT NULL DEFAULT 0,
+    food_name varchar(200) NOT NULL,
+    total_cooked integer NOT NULL DEFAULT 0,
+    created_at timestamp NOT NULL DEFAULT now()
+  )`,
+  `CREATE TABLE IF NOT EXISTS order_food_items (
+    id serial PRIMARY KEY,
+    order_id integer NOT NULL REFERENCES orders(id),
+    food_id integer NOT NULL REFERENCES foods(id),
+    food_name varchar(200) NOT NULL,
+    quantity integer NOT NULL,
+    unit_price_gross real NOT NULL,
+    total_price_gross real NOT NULL
+  )`,
 
   // --- NEU: Getränke-Verkaufsstellen Zuordnung ---
   `CREATE TABLE IF NOT EXISTS drink_sales_points (
