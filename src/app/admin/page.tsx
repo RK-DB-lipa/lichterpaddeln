@@ -47,6 +47,9 @@ export default function AdminPage() {
   const [usernameTargetUser, setUsernameTargetUser] = useState<any>(null);
   const [newUsername, setNewUsername] = useState("");
 
+  // Gruppen
+  const [groups, setGroups] = useState<string[]>([]);
+
   const isSuperAdmin = session?.role === "admin" && session?.username === "admin";
 
   const checkAuth = useCallback(async () => {
@@ -55,6 +58,9 @@ export default function AdminPage() {
 
   const fetchDrinks = useCallback(async () => {
     try { const r = await fetch("/api/drinks"); if (r.ok) setDrinks(await r.json()); } catch (err) { console.error(err); }
+  }, []);
+  const fetchGroups = useCallback(async () => {
+    try { const r = await fetch("/api/groups"); if (r.ok) setGroups(await r.json()); } catch (err) { console.error(err); }
   }, []);
   const fetchSalesPoints = useCallback(async () => {
     try { const r = await fetch("/api/sales-points"); if (r.ok) setSalesPoints(await r.json()); } catch (err) { console.error(err); }
@@ -95,7 +101,7 @@ export default function AdminPage() {
   }, []);
 
   useEffect(() => { checkAuth(); }, [checkAuth]);
-  useEffect(() => { if (session) { fetchDrinks(); fetchSalesPoints(); fetchOrders(); fetchPourStats(); fetchCupCounters(); fetchNames(); } }, [session, fetchDrinks, fetchSalesPoints, fetchOrders, fetchPourStats, fetchCupCounters, fetchNames]);
+  useEffect(() => { if (session) { fetchDrinks(); fetchGroups(); fetchSalesPoints(); fetchOrders(); fetchPourStats(); fetchCupCounters(); fetchNames(); } }, [session, fetchDrinks, fetchGroups, fetchSalesPoints, fetchOrders, fetchPourStats, fetchCupCounters, fetchNames]);
   useEffect(() => { if (activeTab === "users" && isSuperAdmin && tenants.length === 0) fetchTenants(); }, [activeTab, isSuperAdmin]);
 
   async function handleLogin(e: React.FormEvent) {
@@ -124,6 +130,15 @@ export default function AdminPage() {
   }
   async function handleSortSP(spId: number, action: "top" | "up" | "down" | "bottom") {
     try { await api("/api/sales-points/sort", "POST", { salesPointId: spId, action }); fetchSalesPoints(); }
+    catch (err: any) { alert(err.message || "Fehler beim Verschieben"); }
+  }
+
+  async function handleSortGroup(group: string, action: "top" | "up" | "down" | "bottom") {
+    try {
+      await api("/api/groups", "POST", { group, action });
+      fetchGroups();
+      fetchDrinks();
+    }
     catch (err: any) { alert(err.message || "Fehler beim Verschieben"); }
   }
 
@@ -214,6 +229,7 @@ export default function AdminPage() {
               return drinks.map((d) => {
                 const currentGroup = d.group || null;
                 const showSeparator = currentGroup && currentGroup !== lastGroup;
+                const groupIndex = currentGroup ? groups.indexOf(currentGroup) : -1;
                 if (currentGroup) lastGroup = currentGroup;
                 return (
                   <div key={d.id} className="contents">
@@ -221,6 +237,14 @@ export default function AdminPage() {
                       <div className="col-span-full flex items-center gap-2 my-2">
                         <span className="h-px flex-1 bg-gray-600" />
                         <span className="text-xs text-gray-400 font-bold uppercase tracking-wider">{currentGroup}</span>
+                        {currentGroup && (
+                          <div className="flex gap-0.5">
+                            <button onClick={() => handleSortGroup(currentGroup, "top")} className="px-1.5 py-0.5 rounded bg-purple-700 hover:bg-purple-600 text-[10px] font-bold" title="Gruppe ganz nach oben">⏫</button>
+                            <button onClick={() => handleSortGroup(currentGroup, "up")} className="px-1.5 py-0.5 rounded bg-purple-700 hover:bg-purple-600 text-[10px] font-bold" title="Gruppe eins nach oben">⇡</button>
+                            <button onClick={() => handleSortGroup(currentGroup, "down")} className="px-1.5 py-0.5 rounded bg-purple-700 hover:bg-purple-600 text-[10px] font-bold" title="Gruppe eins nach unten">⇣</button>
+                            <button onClick={() => handleSortGroup(currentGroup, "bottom")} className="px-1.5 py-0.5 rounded bg-purple-700 hover:bg-purple-600 text-[10px] font-bold" title="Gruppe ganz nach unten">⏬</button>
+                          </div>
+                        )}
                         <span className="h-px flex-1 bg-gray-600" />
                       </div>
                     )}
