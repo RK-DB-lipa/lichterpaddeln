@@ -15,24 +15,25 @@ export async function GET(req: NextRequest) {
     const activeOnly = url.searchParams.get("active") === "true";
     const currentDate = url.searchParams.get("date");
 
-    let query = db.select().from(events).where(eq(events.tenantId, tenantId));
-
+    // Build conditions array
+    const conditions = [eq(events.tenantId, tenantId)];
+    
     if (activeOnly) {
-      query = query.where(eq(events.isActive, true)) as any;
+      conditions.push(eq(events.isActive, true));
     }
 
     if (currentDate) {
       const date = new Date(currentDate);
-      query = query.where(
-        and(
-          lte(events.startDate, date),
-          gte(events.endDate, date),
-          eq(events.isActive, true)
-        )
-      ) as any;
+      conditions.push(lte(events.startDate, date));
+      conditions.push(gte(events.endDate, date));
+      conditions.push(eq(events.isActive, true));
     }
 
-    const allEvents = await query.orderBy(events.startDate);
+    const allEvents = await db
+      .select()
+      .from(events)
+      .where(and(...conditions))
+      .orderBy(events.startDate);
 
     // Für jedes Event: Anzahl Drinks und Foods ermitteln
     const eventsWithCounts = await Promise.all(
