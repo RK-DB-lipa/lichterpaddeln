@@ -354,17 +354,32 @@ export default function POSPage() {
 
           {activeTab === "drinks" && drinks.length > 0 && (
             <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-1.5 md:gap-2">
-              {drinks.map((drink) => {
-                const count = orderItems.get(drink.id)?.quantity || 0;
-                return (
-                  <button key={drink.id} onClick={() => addDrink(drink)} className={`relative rounded-xl p-2 md:p-3 text-left active:scale-[0.97] transition-all shadow-md border ${removeMode && count > 0 ? "border-red-400 border-2" : "border-white/10 hover:border-white/30"} min-h-[80px] md:min-h-[100px] flex flex-col justify-between`} style={{ backgroundColor: drink.color, backgroundImage: drink.imageUrl ? `linear-gradient(rgba(0,0,0,0.45), rgba(0,0,0,0.65)), url(${drink.imageUrl})` : undefined, backgroundSize: "cover", backgroundPosition: "center" }}>
-                    {count > 0 && <div className="absolute -top-1.5 -right-1.5 bg-white text-gray-900 rounded-full w-6 h-6 md:w-7 md:h-7 flex items-center justify-center font-extrabold text-sm shadow-lg border border-gray-200">{count}</div>}
-                    {removeMode && count > 0 && <div className="absolute -top-1.5 -left-1.5 bg-red-500 text-white rounded-full w-5 h-5 flex items-center justify-center font-black text-xs shadow-lg">−</div>}
-                    <div className="font-extrabold text-sm md:text-base leading-tight drop-shadow-md">{drink.name}</div>
-                    <div className="mt-auto"><div className="text-lg md:text-xl font-extrabold drop-shadow-md">{drink.priceGross.toFixed(2)} €</div>{drink.hasDeposit && <div className="text-[10px] opacity-80 mt-0.5 drop-shadow">+ {drink.depositAmount.toFixed(2)} € Pfand</div>}<div className="text-[9px] opacity-60 mt-0.5">{drink.taxRate}% MwSt.</div></div>
-                  </button>
-                );
-              })}
+              {(() => {
+                let lastGroup: string | null = "__NONE__";
+                return drinks.map((drink) => {
+                  const currentGroup = drink.group || null;
+                  const showSeparator = currentGroup && currentGroup !== lastGroup;
+                  if (currentGroup) lastGroup = currentGroup;
+                  const count = orderItems.get(drink.id)?.quantity || 0;
+                  return (
+                    <div key={drink.id} className="contents">
+                      {showSeparator && (
+                        <div className="col-span-full flex items-center gap-2 my-2">
+                          <span className="h-px flex-1 bg-gray-600" />
+                          <span className="text-xs text-gray-400 font-bold uppercase tracking-wider">{currentGroup}</span>
+                          <span className="h-px flex-1 bg-gray-600" />
+                        </div>
+                      )}
+                      <button onClick={() => addDrink(drink)} className={`relative rounded-xl p-2 md:p-3 text-left active:scale-[0.97] transition-all shadow-md border ${removeMode && count > 0 ? "border-red-400 border-2" : "border-white/10 hover:border-white/30"} min-h-[80px] md:min-h-[100px] flex flex-col justify-between`} style={{ backgroundColor: drink.color, backgroundImage: drink.imageUrl ? `linear-gradient(rgba(0,0,0,0.45), rgba(0,0,0,0.65)), url(${drink.imageUrl})` : undefined, backgroundSize: "cover", backgroundPosition: "center" }}>
+                        {count > 0 && <div className="absolute -top-1.5 -right-1.5 bg-white text-gray-900 rounded-full w-6 h-6 md:w-7 md:h-7 flex items-center justify-center font-extrabold text-sm shadow-lg border border-gray-200">{count}</div>}
+                        {removeMode && count > 0 && <div className="absolute -top-1.5 -left-1.5 bg-red-500 text-white rounded-full w-5 h-5 flex items-center justify-center font-black text-xs shadow-lg">−</div>}
+                        <div className="font-extrabold text-sm md:text-base leading-tight drop-shadow-md">{drink.name}</div>
+                        <div className="mt-auto"><div className="text-lg md:text-xl font-extrabold drop-shadow-md">{drink.priceGross.toFixed(2)} €</div>{drink.hasDeposit && <div className="text-[10px] opacity-80 mt-0.5 drop-shadow">+ {drink.depositAmount.toFixed(2)} € Pfand</div>}<div className="text-[9px] opacity-60 mt-0.5">{drink.taxRate}% MwSt.</div></div>
+                      </button>
+                    </div>
+                  );
+                });
+              })()}
             </div>
           )}
 
