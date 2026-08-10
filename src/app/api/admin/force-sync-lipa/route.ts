@@ -67,11 +67,14 @@ export async function POST() {
     // === SCHRITT 3: Getränke von Admin zu Lipa kopieren ===
     const drinkIdMap = new Map<number, number>();
     let drinkCount = 0;
-    try {
-      console.log(`[Force-Sync] Schritt 3: Kopiere Getränke...`);
-      const adminDrinks = await db.select().from(drinks).where(eq(drinks.tenantId, ADMIN_TENANT));
+    let drinkErrors: string[] = [];
+    
+    console.log(`[Force-Sync] Schritt 3: Kopiere Getränke...`);
+    const adminDrinks = await db.select().from(drinks).where(eq(drinks.tenantId, ADMIN_TENANT));
+    console.log(`[Force-Sync] ${adminDrinks.length} Getränke gefunden auf Admin-Tenant`);
 
-      for (const drink of adminDrinks) {
+    for (const drink of adminDrinks) {
+      try {
         const [newDrink] = await db.insert(drinks).values({
           tenantId: LIPA_TENANT,
           name: drink.name,
@@ -89,18 +92,20 @@ export async function POST() {
         }).returning();
         drinkIdMap.set(drink.id, newDrink.id);
         drinkCount++;
+      } catch (err: any) {
+        const errorMsg = err?.message || String(err) || 'Unbekannter Fehler';
+        const errorDetail = `Getränk "${drink.name}" (ID: ${drink.id}): ${errorMsg}`;
+        drinkErrors.push(errorDetail);
+        console.error(`[Force-Sync] Fehler beim Kopieren von "${drink.name}":`, err);
       }
-      console.log(`[Force-Sync] ✓ ${drinkCount} Getränke kopiert`);
-    } catch (err: any) {
-      const errorMsg = err?.message || String(err) || 'Unbekannter Fehler';
-      errors.push(`Schritt 3 (Getränke): ${errorMsg}`);
-      console.error(`[Force-Sync] Fehler in Schritt 3:`, err);
-      console.error(`[Force-Sync] Error details:`, {
-        message: err?.message,
-        code: err?.code,
-        detail: err?.detail,
-        stack: err?.stack?.split('\n').slice(0, 3).join('\n'),
-      });
+    }
+    
+    console.log(`[Force-Sync] ✓ ${drinkCount}/${adminDrinks.length} Getränke kopiert`);
+    if (drinkErrors.length > 0) {
+      console.error(`[Force-Sync] ${drinkErrors.length} Fehler beim Kopieren von Getränken:`);
+      drinkErrors.forEach(e => console.error('  -', e));
+      errors.push(`Schritt 3: ${drinkErrors.length} Getränke konnten nicht kopiert werden`);
+      errors.push(...drinkErrors);
     }
 
     // === SCHRITT 4: Getränke-Verkaufsstellen-Zuordnungen kopieren ===
