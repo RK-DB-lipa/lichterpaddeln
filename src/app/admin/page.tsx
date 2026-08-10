@@ -10,7 +10,7 @@ type OrderItemSummary = { drinkName: string; totalQuantity: number; totalGross: 
 type FoodItemSummary = { foodName: string; totalQuantity: number; totalGross: number };
 type OrderTotals = { totalOrders: number; totalRevenue: number; totalDepositsCharged: number; totalDepositsReturned: number; netDeposits: number; };
 type Order = { id: number; salesPointId: number; totalGross: number; totalDeposit: number; totalDepositReturned: number; netDeposit: number; cashierName?: string; createdAt: string; foodItems?: Array<{ foodName: string; quantity: number; unitPriceGross: number; totalPriceGross: number }> };
-type OrderDetail = { drinkName: string; quantity: number; unitPriceGross: number; unitDeposit: number; totalPriceGross: number; totalDeposit: number; };
+type OrderDetail = { order: Order; items: Array<{ drinkName: string; quantity: number; unitPriceGross: number; unitDeposit: number; totalPriceGross: number; totalDeposit: number; }>; foodItems?: Array<{ foodName: string; quantity: number; unitPriceGross: number; totalPriceGross: number; }> };
 type PourStat = { drinkName: string; totalPoured: number; };
 type CupCounter = { salesPointId: number; given02: number; given04: number; returned02: number; returned04: number; };
 type TenantInfo = { userId: number; username: string; isActive: boolean; expiresAt: string; drinks: number; orders: number; pours: number; };
@@ -273,8 +273,9 @@ export default function AdminPage() {
   const getSPName = (id: number) => salesPoints.find((sp) => sp.id === id)?.name || `ID ${id}`;
   const cupTotals = cupCounters.reduce((a, c) => ({ given02: a.given02 + c.given02, given04: a.given04 + c.given04, returned02: a.returned02 + c.returned02, returned04: a.returned04 + c.returned04 }), { given02: 0, given04: 0, returned02: 0, returned04: 0 });
 
-  const showOrderDetail = async (order: Order) => {
-    try { const r = await fetch(`/api/orders/${order.id}`); if (r.ok) { const d = await r.json(); setOrderDetail({ order: d.order, items: d.items || [] }); } } catch (err) { console.error(err); }
+  const showOrderDetail = (order: Order) => {
+    // Order enthält bereits foodItems aus der GET /api/orders Antwort
+    setOrderDetail({ order, items: [], foodItems: order.foodItems || [] });
   };
 
   const switchToTenant = async (tenantId: number) => {
