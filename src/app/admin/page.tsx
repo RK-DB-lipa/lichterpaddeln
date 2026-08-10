@@ -1,724 +1,306 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 
-type Drink = { id: number; name: string; priceGross: number; taxRate: number; hasDeposit: boolean; depositAmount: number; cupSize: string; color: string; imageUrl: string | null; isActive: boolean; sortOrder: number; isPourDrink: boolean; salesPointIds?: number[]; group?: string | null; };
-type SalesPoint = { id: number; name: string; isActive: boolean; sortOrder: number; };
-type OrderItemSummary = { drinkName: string; totalQuantity: number; totalGross: number; totalDeposit: number; };
-type OrderTotals = { totalOrders: number; totalRevenue: number; totalDepositsCharged: number; totalDepositsReturned: number; netDeposits: number; };
-type Order = { id: number; salesPointId: number; totalGross: number; totalDeposit: number; totalDepositReturned: number; netDeposit: number; cashierName?: string; createdAt: string; };
-type OrderDetail = { drinkName: string; quantity: number; unitPriceGross: number; unitDeposit: number; totalPriceGross: number; totalDeposit: number; };
-type PourStat = { drinkName: string; totalPoured: number; };
-type CupCounter = { salesPointId: number; given02: number; given04: number; returned02: number; returned04: number; };
-type TenantInfo = { userId: number; username: string; isActive: boolean; expiresAt: string; drinks: number; orders: number; pours: number; };
+type Drink = { id: number; name: string; priceGross: number; taxRate: number; hasDeposit: boolean; depositAmount: number; cupSize: string; color: string; imageUrl: string | null; isPourDrink: boolean; salesPointIds?: number[]; group?: string | null; };
+type SalesPoint = { id: number; name: string; };
+type OrderItem = { drinkId: number; drinkName: string; quantity: number; unitPriceGross: number; unitDeposit: number; };
+type HandoutState = { orderId: number; salesPointName: string; items: Array<OrderItem & { isPourDrink: boolean }>; checked: Record<number, boolean>; totalGross: number; depositReturnedCount: number; };
 
-const EMPTY_DRINK = { name: "", priceGross: "", taxRate: "19", hasDeposit: true, depositAmount: "2.00", cupSize: "04", color: "#3B82F6", imageUrl: "", sortOrder: "0", isPourDrink: false, salesPointIds: [] as number[], group: "" };
+const DEPOSIT_PER_RETURN = 2.0;
 
-export default function AdminPage() {
+export default function POSPage() {
   const [session, setSession] = useState<any>(undefined);
-  const [username, setUsername] = useState(""); const [password, setPassword] = useState(""); const [loginError, setLoginError] = useState("");
+  const [loginUsername, setLoginUsername] = useState("");
+  const [loginPassword, setLoginPassword] = useState("");
+  const [loginDisplayName, setLoginDisplayName] = useState("");
+  const [loginError, setLoginError] = useState("");
   const [drinks, setDrinks] = useState<Drink[]>([]);
-  const [editingDrink, setEditingDrink] = useState<Drink | null>(null);
-  const [showDrinkForm, setShowDrinkForm] = useState(false); const [formData, setFormData] = useState(EMPTY_DRINK); const [formError, setFormError] = useState("");
   const [salesPoints, setSalesPoints] = useState<SalesPoint[]>([]);
-  const [showSalesPointForm, setShowSalesPointForm] = useState(false); const [spFormName, setSpFormName] = useState(""); const [spFormError, setSpFormError] = useState("");
-  const [editingSalesPoint, setEditingSalesPoint] = useState<SalesPoint | null>(null); const [spEditName, setSpEditName] = useState("");
-  const [orders, setOrders] = useState<Order[]>([]);
-  const [drinkSummary, setDrinkSummary] = useState<OrderItemSummary[]>([]);
-  const [totals, setTotals] = useState<OrderTotals | null>(null);
-  const [activeTab, setActiveTab] = useState<string>("drinks");
-  const [orderFilter, setOrderFilter] = useState<string>("");
-  const [cashierFilter, setCashierFilter] = useState<string>(""); const [cashierNames, setCashierNames] = useState<string[]>([]);
-  const [pourerFilter, setPourerFilter] = useState<string>(""); const [pourerNames, setPourerNames] = useState<string[]>([]);
-  const [showResetConfirm, setShowResetConfirm] = useState(false); const [resetTarget, setResetTarget] = useState("");
-  const [pourStats, setPourStats] = useState<PourStat[]>([]);
-  const [showPourResetConfirm, setShowPourResetConfirm] = useState(false);
-  const [cupCounters, setCupCounters] = useState<CupCounter[]>([]);
-  const [showCupResetConfirm, setShowCupResetConfirm] = useState(false); const [cupResetTarget, setCupResetTarget] = useState("");
-  const [orderDetail, setOrderDetail] = useState<{ order: Order; items: OrderDetail[] } | null>(null);
-  // Superadmin
-  const [tenants, setTenants] = useState<TenantInfo[]>([]);
-  const [showUsersTab, setShowUsersTab] = useState(false);
-  
-  // Passwort & Username ändern
-  const [showPasswordModal, setShowPasswordModal] = useState(false);
-  const [passwordTargetUser, setPasswordTargetUser] = useState<any>(null);
-  const [showUsernameModal, setShowUsernameModal] = useState(false);
-  const [usernameTargetUser, setUsernameTargetUser] = useState<any>(null);
-  const [newUsername, setNewUsername] = useState("");
+  const [selectedSalesPointId, setSelectedSalesPointId] = useState<number | null>(null);
+  const [orderItems, setOrderItems] = useState<Map<number, OrderItem>>(new Map());
+  const [depositReturned02, setDepositReturned02] = useState(0);
+  const [depositReturned04, setDepositReturned04] = useState(0);
+  const [showResetConfirm, setShowResetConfirm] = useState(false);
+  const [showCancelConfirm, setShowCancelConfirm] = useState(false);
+  const [showSuccess, setShowSuccess] = useState(false);
+  const [showCalculator, setShowCalculator] = useState(false);
+  const [editingItem, setEditingItem] = useState<number | null>(null);
+  const [editQuantity, setEditQuantity] = useState("1");
+  const [pourSent, setPourSent] = useState(false);
+  const [removeMode, setRemoveMode] = useState(false);
+  const [lastOrder, setLastOrder] = useState<{ orderId: number; totalGross: number } | null>(null);
+  const [handout, setHandout] = useState<HandoutState | null>(null);
+  const [receiptMinimized, setReceiptMinimized] = useState(false);
+  const [receiptPos, setReceiptPos] = useState({ x: 0, y: 0 });
+  const [isDragging, setIsDragging] = useState(false);
+  const dragOffset = useRef({ x: 0, y: 0 });
+  const receiptRef = useRef<HTMLDivElement>(null);
+  const wakeLockRef = useRef<any>(null);
 
-  // Gruppen
-  const [groups, setGroups] = useState<string[]>([]);
-
-  const isSuperAdmin = session?.role === "admin" && session?.username === "admin";
-
-  const checkAuth = useCallback(async () => {
-    try { const r = await fetch("/api/auth/me"); if (r.ok) setSession(await r.json()); else setSession(null); } catch { setSession(null); }
-  }, []);
-
-  const fetchDrinks = useCallback(async () => {
-    try { const r = await fetch("/api/drinks"); if (r.ok) setDrinks(await r.json()); } catch (err) { console.error(err); }
-  }, []);
-  const fetchGroups = useCallback(async () => {
-    try { const r = await fetch("/api/groups"); if (r.ok) setGroups(await r.json()); } catch (err) { console.error(err); }
-  }, []);
-  const fetchSalesPoints = useCallback(async () => {
-    try { const r = await fetch("/api/sales-points"); if (r.ok) setSalesPoints(await r.json()); } catch (err) { console.error(err); }
-  }, []);
-  const fetchNames = useCallback(async () => {
-    try {
-      const [c, p] = await Promise.all([
-        fetch("/api/names?type=cashier").then((r) => r.ok ? r.json() : []),
-        fetch("/api/names?type=pourer").then((r) => r.ok ? r.json() : []),
-      ]);
-      setCashierNames(c || []); setPourerNames(p || []);
-    } catch {}
-  }, []);
-  const fetchOrders = useCallback(async () => {
-    try {
-      const params = new URLSearchParams();
-      if (orderFilter) params.set("salesPointId", orderFilter);
-      if (cashierFilter) params.set("cashierName", cashierFilter);
-      const qs = params.toString();
-      const r = await fetch(qs ? `/api/orders?${qs}` : "/api/orders");
-      if (r.ok) { const d = await r.json(); setOrders(d.orders || []); setDrinkSummary(d.drinkSummary || []); setTotals(d.totals || null); }
-    } catch (err) { console.error(err); }
-  }, [orderFilter, cashierFilter]);
-  const fetchPourStats = useCallback(async () => {
-    try {
-      const params = new URLSearchParams();
-      if (pourerFilter) params.set("pourerName", pourerFilter);
-      const qs = params.toString();
-      const r = await fetch(qs ? `/api/pour/stats?${qs}` : "/api/pour/stats");
-      if (r.ok) setPourStats(await r.json());
-    } catch (err) { console.error(err); }
-  }, [pourerFilter]);
-  const fetchCupCounters = useCallback(async () => {
-    try { const r = await fetch("/api/cups"); if (r.ok) setCupCounters(await r.json()); } catch (err) { console.error(err); }
-  }, []);
-  const fetchTenants = useCallback(async () => {
-    try { const r = await fetch("/api/superadmin"); if (r.ok) setTenants(await r.json()); } catch (err) { console.error(err); }
-  }, []);
-
-  useEffect(() => { checkAuth(); }, [checkAuth]);
-  useEffect(() => { if (session) { fetchDrinks(); fetchGroups(); fetchSalesPoints(); fetchOrders(); fetchPourStats(); fetchCupCounters(); fetchNames(); } }, [session, fetchDrinks, fetchGroups, fetchSalesPoints, fetchOrders, fetchPourStats, fetchCupCounters, fetchNames]);
-  useEffect(() => { if (activeTab === "users" && isSuperAdmin && tenants.length === 0) fetchTenants(); }, [activeTab, isSuperAdmin]);
-
+  useEffect(() => { checkAuth(); }, []);
+  async function checkAuth() { try { const r = await fetch("/api/auth/me"); setSession(r.ok ? await r.json() : null); } catch { setSession(null); } }
   async function handleLogin(e: React.FormEvent) {
     e.preventDefault(); setLoginError("");
     try {
-      const r = await fetch("/api/auth/login", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ username, password }) });
-      if (r.ok) { window.location.reload(); } else { const d = await r.json(); setLoginError(d.error || "Fehler"); }
+      const r = await fetch("/api/auth/login", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ username: loginUsername, password: loginPassword, displayName: loginDisplayName || loginUsername }) });
+      if (r.ok) window.location.reload(); else { const d = await r.json(); setLoginError(d.error || "Fehler"); }
     } catch { setLoginError("Verbindungsfehler"); }
   }
-  async function handleLogout() { await fetch("/api/auth/logout", { method: "POST" }); setSession(null); }
-  async function api(path: string, method: string, body?: any) { const r = await fetch(path, { method, headers: { "Content-Type": "application/json" }, body: body ? JSON.stringify(body) : undefined }); if (!r.ok) throw new Error((await r.json()).error || "API-Fehler"); return r.json(); }
+  async function handleLogout() { await fetch("/api/auth/logout", { method: "POST" }); window.location.reload(); }
+  useEffect(() => { async function rwl() { try { if ("wakeLock" in navigator) { wakeLockRef.current = await (navigator as any).wakeLock.request("screen"); wakeLockRef.current?.addEventListener("release", () => rwl()); } } catch {} } rwl(); const hv = () => { if (document.visibilityState === "visible") rwl(); }; document.addEventListener("visibilitychange", hv); return () => { document.removeEventListener("visibilitychange", hv); wakeLockRef.current?.release?.()?.catch?.(() => {}); }; }, []);
+  useEffect(() => { const s = localStorage.getItem("selectedSalesPointId"); if (s) setSelectedSalesPointId(parseInt(s)); }, []);
+  useEffect(() => { if (selectedSalesPointId !== null) localStorage.setItem("selectedSalesPointId", selectedSalesPointId.toString()); }, [selectedSalesPointId]);
+  useEffect(() => {
+    if (!session?.authenticated) return;
+    fetch("/api/admin/setup", { method: "POST" }).then(() => { fetchDrinks().then(() => fetchSalesPoints()); });
+  }, [session?.authenticated]);
 
-  async function handleSaveDrink(e: React.FormEvent) {
-    e.preventDefault(); setFormError("");
-    if (!formData.name || !formData.priceGross) { setFormError("Name und Bruttopreis erforderlich"); return; }
+  async function fetchDrinks() {
     try {
-      const p = { name: formData.name, priceGross: parseFloat(formData.priceGross), taxRate: parseFloat(formData.taxRate), hasDeposit: formData.hasDeposit, depositAmount: parseFloat(formData.depositAmount), cupSize: formData.cupSize, color: formData.color, imageUrl: formData.imageUrl || null, sortOrder: parseInt(formData.sortOrder) || 0, isPourDrink: formData.isPourDrink, salesPointIds: formData.salesPointIds || [], group: formData.group || null };
-      if (editingDrink) await api(`/api/drinks/${editingDrink.id}`, "PUT", p); else await api("/api/drinks", "POST", p);
-      setShowDrinkForm(false); fetchDrinks();
-    } catch (err: any) { setFormError(err.message); }
+      const url = selectedSalesPointId ? `/api/drinks?salesPointId=${selectedSalesPointId}` : "/api/drinks";
+      const r = await fetch(url); if (r.ok) setDrinks(await r.json());
+    } catch (err) { console.error(err); }
   }
-  async function handleDeleteDrink(id: number) { if (!confirm("Getränk deaktivieren?")) return; try { await api(`/api/drinks/${id}`, "DELETE"); fetchDrinks(); } catch (err) { console.error(err); } }
-  async function handleSortDrink(drinkId: number, action: "top" | "up" | "down" | "bottom") {
-    try { await api("/api/drinks/sort", "POST", { drinkId, action }); fetchDrinks(); }
-    catch (err: any) { alert(err.message || "Fehler beim Verschieben"); }
-  }
-  async function handleSortSP(spId: number, action: "top" | "up" | "down" | "bottom") {
-    try { await api("/api/sales-points/sort", "POST", { salesPointId: spId, action }); fetchSalesPoints(); }
-    catch (err: any) { alert(err.message || "Fehler beim Verschieben"); }
+  async function fetchSalesPoints() {
+    try { const r = await fetch("/api/sales-points"); if (r.ok) { const d = await r.json(); setSalesPoints(d); if (d.length > 0 && selectedSalesPointId === null) setSelectedSalesPointId(d[0].id); } } catch (err) { console.error(err); }
   }
 
-  async function handleSortGroup(group: string, action: "top" | "up" | "down" | "bottom") {
-    try {
-      await api("/api/groups", "POST", { group, action });
-      fetchGroups();
-      fetchDrinks();
+  useEffect(() => { if (session?.authenticated && selectedSalesPointId) fetchDrinks(); }, [session?.authenticated, selectedSalesPointId]);
+
+  const addDrink = useCallback((drink: Drink) => {
+    if (removeMode) { setRemoveMode(false); setOrderItems((prev) => { const n = new Map(prev); const ex = n.get(drink.id); if (!ex) return n; if (ex.quantity <= 1) n.delete(drink.id); else n.set(drink.id, { ...ex, quantity: ex.quantity - 1 }); return n; }); return; }
+    setPourSent(false); setOrderItems((prev) => { const n = new Map(prev); const ex = n.get(drink.id); if (ex) n.set(drink.id, { ...ex, quantity: ex.quantity + 1 }); else n.set(drink.id, { drinkId: drink.id, drinkName: drink.name, quantity: 1, unitPriceGross: drink.priceGross, unitDeposit: drink.hasDeposit ? drink.depositAmount : 0 }); return n; });
+  }, [removeMode]);
+
+  const addDepositReturn = useCallback(async (size: "02" | "04", count: number) => {
+    if (selectedSalesPointId) { await fetch("/api/cups/return", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ salesPointId: selectedSalesPointId, size, count }) }).catch(() => {}); }
+    if (size === "02") setDepositReturned02((p) => p + count); else setDepositReturned04((p) => p + count);
+  }, [selectedSalesPointId]);
+
+  const removeItem = useCallback((drinkId: number) => { setOrderItems((prev) => { const n = new Map(prev); n.delete(drinkId); return n; }); }, []);
+  const updateItemQuantity = useCallback((drinkId: number, newQty: number) => { if (newQty < 1) { removeItem(drinkId); return; } setOrderItems((prev) => { const n = new Map(prev); const ex = n.get(drinkId); if (ex) n.set(drinkId, { ...ex, quantity: newQty }); return n; }); }, [removeItem]);
+
+  const cancelOrder = useCallback(async () => {
+    if (pourSent && selectedSalesPointId) { const pourItems = Array.from(orderItems.values()).filter((item) => drinks.find((d) => d.id === item.drinkId)?.isPourDrink).map((item) => ({ drinkName: item.drinkName, quantity: item.quantity })); if (pourItems.length > 0) { try { await fetch("/api/pour/cancel", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ salesPointId: selectedSalesPointId, items: pourItems }) }); } catch (err) { console.error(err); } } }
+    setOrderItems(new Map()); setDepositReturned02(0); setDepositReturned04(0); setPourSent(false); setRemoveMode(false); setShowCancelConfirm(false);
+  }, [pourSent, selectedSalesPointId, orderItems, drinks]);
+
+  // FIX: Korrekte Preis-Kalkulation mit Integer-Cents (verhindet Float-Ungenauigkeiten)
+  const items = Array.from(orderItems.values());
+  
+  // Helper: Euro zu Cents konvertieren
+  const toCents = (euros: number) => Math.round(euros * 100);
+  const toEuros = (cents: number) => +(cents / 100).toFixed(2);
+  
+  // Alle Berechnungen in Cents (Integer-Arithmetik ist exakt)
+  const totalDrinkGrossCents = items.reduce((sum, i) => {
+    const itemCents = toCents(i.unitPriceGross) * i.quantity;
+    return sum + itemCents;
+  }, 0);
+  
+  const totalDepositChargedCents = items.reduce((sum, i) => {
+    const itemCents = toCents(i.unitDeposit) * i.quantity;
+    return sum + itemCents;
+  }, 0);
+  
+  const depositReturned = depositReturned02 + depositReturned04;
+  const totalDepositReturnCents = toCents(depositReturned * DEPOSIT_PER_RETURN);
+  const netDepositCents = totalDepositChargedCents - totalDepositReturnCents;
+  const grandTotalCents = totalDrinkGrossCents + netDepositCents;
+  
+  // Zurück zu Euro konvertieren
+  const totalDrinkGross = toEuros(totalDrinkGrossCents);
+  const totalDepositCharged = toEuros(totalDepositChargedCents);
+  const totalDepositReturn = toEuros(totalDepositReturnCents);
+  const netDeposit = toEuros(netDepositCents);
+  const grandTotal = toEuros(grandTotalCents);
+  const hasItems = items.length > 0 || depositReturned > 0;
+  const totalDrinksCount = items.reduce((s, i) => s + i.quantity, 0);
+  const pourItemCount = items.filter((i) => drinks.find((d) => d.id === i.drinkId)?.isPourDrink).reduce((s, i) => s + i.quantity, 0);
+  const hasPourDrinks = pourItemCount > 0;
+  const selectedSalesPoint = salesPoints.find((sp) => sp.id === selectedSalesPointId);
+
+  const sendToPour = useCallback(async () => {
+    if (!selectedSalesPointId || pourSent) return;
+    const pourItems = items.filter((i) => drinks.find((d) => d.id === i.drinkId)?.isPourDrink).map((i) => ({ drinkName: i.drinkName, quantity: i.quantity }));
+    if (pourItems.length === 0) return;
+    try { const r = await fetch("/api/pour/queue", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ salesPointId: selectedSalesPointId, items: pourItems }) }); if (r.ok) setPourSent(true); } catch (err) { console.error(err); }
+  }, [items, drinks, selectedSalesPointId, pourSent]);
+
+  const handleReset = useCallback(async () => {
+    if (!selectedSalesPointId) return;
+    if (items.length > 0) {
+      try {
+        const cashierName = session?.displayName || session?.username || "";
+        const r = await fetch("/api/orders", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ items: items.map((i) => ({ drinkId: i.drinkId, quantity: i.quantity })), depositReturned, salesPointId: selectedSalesPointId, cashierName }) });
+        if (r.ok) { const data = await r.json(); setLastOrder({ orderId: data.orderId, totalGross: grandTotal }); setShowSuccess(true); setTimeout(() => setShowSuccess(false), 3000); setHandout({ orderId: data.orderId, salesPointName: selectedSalesPoint?.name || "", items: items.map((i) => ({ ...i, isPourDrink: drinks.find((d) => d.id === i.drinkId)?.isPourDrink ?? false })), checked: {}, totalGross: grandTotal, depositReturnedCount: depositReturned }); }
+      } catch (err) { console.error(err); }
     }
-    catch (err: any) { alert(err.message || "Fehler beim Verschieben"); }
-  }
+    setOrderItems(new Map()); setDepositReturned02(0); setDepositReturned04(0); setPourSent(false); setRemoveMode(false); setShowResetConfirm(false);
+  }, [items, depositReturned, grandTotal, selectedSalesPointId, selectedSalesPoint, drinks, session]);
 
-  async function handleChangeUsername() {
-    if (!usernameTargetUser || !newUsername.trim()) return;
-    try {
-      await api(`/api/users/${usernameTargetUser.id}/username`, "PUT", { username: newUsername.trim() });
-      setShowUsernameModal(false);
-      setUsernameTargetUser(null);
-      setNewUsername("");
-      fetchTenants();
-      alert("Username erfolgreich geändert");
-    } catch (err: any) {
-      alert(err.message || "Fehler beim Ändern des Usernames");
-    }
-  }
-  async function handleSaveSP(e: React.FormEvent) { e.preventDefault(); setSpFormError(""); if (!spFormName.trim()) { setSpFormError("Name erforderlich"); return; } try { await api("/api/sales-points", "POST", { name: spFormName.trim() }); setShowSalesPointForm(false); setSpFormName(""); fetchSalesPoints(); } catch (err: any) { setSpFormError(err.message); } }
-  async function handleUpdateSP(e: React.FormEvent) { e.preventDefault(); if (!editingSalesPoint || !spEditName.trim()) return; try { await api(`/api/sales-points/${editingSalesPoint.id}`, "PUT", { name: spEditName.trim() }); setEditingSalesPoint(null); setSpEditName(""); fetchSalesPoints(); } catch (err) { console.error(err); } }
-  async function handleDeleteSP(id: number) { if (!confirm("Verkaufsstelle deaktivieren?")) return; try { await api(`/api/sales-points/${id}`, "DELETE"); fetchSalesPoints(); } catch (err) { console.error(err); } }
-  async function handleResetOrders() { try { await api("/api/admin/reset", "POST", resetTarget ? { salesPointId: parseInt(resetTarget) } : {}); setShowResetConfirm(false); setResetTarget(""); fetchOrders(); } catch (err) { console.error(err); } }
-  async function handleResetPour() { try { await api("/api/pour/reset", "POST"); setShowPourResetConfirm(false); fetchPourStats(); } catch (err) { console.error(err); } }
-  async function handleResetCups() { try { await api("/api/cups/reset", "POST", cupResetTarget ? { salesPointId: parseInt(cupResetTarget) } : {}); setShowCupResetConfirm(false); setCupResetTarget(""); fetchCupCounters(); } catch (err) { console.error(err); } }
+  const handleDragStart = (e: React.MouseEvent | React.TouchEvent) => { if (!receiptRef.current) return; setIsDragging(true); const cx = "touches" in e ? e.touches[0].clientX : e.clientX; const cy = "touches" in e ? e.touches[0].clientY : e.clientY; const r = receiptRef.current.getBoundingClientRect(); dragOffset.current = { x: cx - r.left, y: cy - r.top }; };
+  const handleDragMove = useCallback((e: MouseEvent | TouchEvent) => {
+    if (!isDragging || !receiptRef.current || !receiptRef.current.parentElement) return;
+    const cx = "touches" in e ? e.touches[0].clientX : e.clientX;
+    const cy = "touches" in e ? e.touches[0].clientY : e.clientY;
+    const panel = receiptRef.current;
+    const container = receiptRef.current.parentElement.getBoundingClientRect();
+    const rect = panel.getBoundingClientRect();
+    // Bounds: Bon darf Container nicht verlassen
+    let nx = cx - dragOffset.current.x - container.left;
+    let ny = cy - dragOffset.current.y - container.top;
+    nx = Math.max(0, Math.min(nx, container.width - rect.width));
+    ny = Math.max(0, Math.min(ny, container.height - rect.height));
+    setReceiptPos({ x: nx, y: ny });
+  }, [isDragging]);
+  const handleDragEnd = useCallback(() => setIsDragging(false), []);
+  useEffect(() => { if (isDragging) { window.addEventListener("mousemove", handleDragMove); window.addEventListener("mouseup", handleDragEnd); window.addEventListener("touchmove", handleDragMove); window.addEventListener("touchend", handleDragEnd); return () => { window.removeEventListener("mousemove", handleDragMove); window.removeEventListener("mouseup", handleDragEnd); window.removeEventListener("touchmove", handleDragMove); window.removeEventListener("touchend", handleDragEnd); }; } }, [isDragging, handleDragMove, handleDragEnd]);
 
-  const getSPName = (id: number) => salesPoints.find((sp) => sp.id === id)?.name || `ID ${id}`;
-  const cupTotals = cupCounters.reduce((a, c) => ({ given02: a.given02 + c.given02, given04: a.given04 + c.given04, returned02: a.returned02 + c.returned02, returned04: a.returned04 + c.returned04 }), { given02: 0, given04: 0, returned02: 0, returned04: 0 });
+  const handoutCheckedCount = handout ? handout.items.filter((i) => handout.checked[i.drinkId]).length : 0;
+  const handoutAllDone = handout !== null && handoutCheckedCount === handout.items.length;
 
-  const showOrderDetail = async (order: Order) => {
-    try { const r = await fetch(`/api/orders/${order.id}`); if (r.ok) { const d = await r.json(); setOrderDetail({ order: d.order, items: d.items || [] }); } } catch (err) { console.error(err); }
-  };
-
-  const switchToTenant = async (tenantId: number) => {
-    try { const r = await api("/api/superadmin", "POST", { tenantId }); if (r.success) window.location.reload(); } catch (err) { console.error(err); }
-  };
-
-  if (session === undefined) return <div className="min-h-screen bg-gray-900 flex items-center justify-center text-white"><p>Laden...</p></div>;
+  if (session === undefined) return <div className="h-screen bg-gray-900 flex items-center justify-center text-white"><p>Laden...</p></div>;
 
   if (!session?.authenticated) {
     return (
-      <div className="min-h-screen bg-gray-900 flex items-center justify-center p-4">
+      <div className="h-screen bg-gray-900 flex items-center justify-center p-4">
         <form onSubmit={handleLogin} className="bg-gray-800 rounded-2xl p-6 w-full max-w-sm shadow-2xl border border-gray-700">
-          <div className="flex items-center gap-3 mb-6">
-            <img src="/images/turbotap-logo.png" alt="TurboTap" className="w-10 h-10 rounded-lg" />
-            <h1 className="text-2xl font-bold text-white">TurboTap</h1>
-          </div>
+          <div className="flex items-center gap-3 mb-2"><img src="/images/turbotap-logo.png" alt="TurboTap" className="w-10 h-10 rounded-lg" /><h1 className="text-2xl font-bold text-white">TurboTap</h1></div>
+          <p className="text-xs text-gray-400 mb-6">Kasse · Mitarbeiter-Anmeldung</p>
           {loginError && <div className="bg-red-900/50 text-red-300 text-sm p-3 rounded-lg mb-4 border border-red-700">{loginError}</div>}
           <div className="space-y-4">
-            <div><label className="block text-sm text-gray-400 mb-1">Benutzername</label><input type="text" value={username} onChange={(e) => setUsername(e.target.value)} className="w-full px-4 py-3 rounded-xl bg-gray-700 text-white border border-gray-600 focus:border-blue-500 focus:outline-none" autoFocus /></div>
-            <div><label className="block text-sm text-gray-400 mb-1">Passwort</label><input type="password" value={password} onChange={(e) => setPassword(e.target.value)} className="w-full px-4 py-3 rounded-xl bg-gray-700 text-white border border-gray-600 focus:border-blue-500 focus:outline-none" /></div>
-            <button type="submit" className="w-full py-3 rounded-xl font-bold bg-amber-600 hover:bg-amber-500 transition-all">Anmelden</button>
-            <a href="/" className="block text-center text-sm text-gray-400 hover:text-white">← Zurück zur Kasse</a>
+            <div><label className="block text-sm text-gray-400 mb-1">Account (Benutzername)</label><input type="text" value={loginUsername} onChange={(e) => setLoginUsername(e.target.value)} className="w-full px-4 py-3 rounded-xl bg-gray-700 text-white border border-gray-600 focus:border-blue-500 focus:outline-none" autoFocus placeholder="z.B. team-festzelt" /></div>
+            <div><label className="block text-sm text-gray-400 mb-1">Passwort</label><input type="password" value={loginPassword} onChange={(e) => setLoginPassword(e.target.value)} className="w-full px-4 py-3 rounded-xl bg-gray-700 text-white border border-gray-600 focus:border-blue-500 focus:outline-none" /></div>
+            <div><label className="block text-sm text-gray-400 mb-1">Dein Mitarbeiter-Name *</label><input type="text" value={loginDisplayName} onChange={(e) => setLoginDisplayName(e.target.value)} className="w-full px-4 py-3 rounded-xl bg-gray-700 text-white border border-gray-600 focus:border-blue-500 focus:outline-none" placeholder="z.B. Max, Anna, Tom" required /></div>
+            <button type="submit" className="w-full py-3 rounded-xl font-bold bg-amber-600 hover:bg-amber-500 transition-all">Als Mitarbeiter anmelden</button>
           </div>
+          <p className="text-[10px] text-gray-500 mt-4 text-center">Dein Mitarbeiter-Name wird für alle Bestellungen und die Statistik erfasst.</p>
         </form>
       </div>
     );
   }
 
+  // Gruppierungs-Logik: Trennlinien zwischen verschiedenen Gruppen
+  const drinkRows: Array<{ type: "drink" | "separator"; drink?: Drink; group?: string; id: string }> = [];
+  let lastGroup: string | null = "__INITIAL__";
+  for (const drink of drinks) {
+    const currentGroup = drink.group || null;
+    if (currentGroup && currentGroup !== lastGroup && drinkRows.length > 0) {
+      drinkRows.push({ type: "separator", group: currentGroup, id: `sep-${currentGroup}` });
+    }
+    drinkRows.push({ type: "drink", drink, id: `d-${drink.id}` });
+    lastGroup = currentGroup;
+  }
+
   return (
-    <div className="h-screen bg-gray-900 text-white flex flex-col overflow-hidden logo-watermark">
-      <header className="bg-gray-800 border-b border-gray-700 px-4 py-3 flex items-center justify-between shrink-0">
-        <div className="flex items-center gap-3 min-w-0">
-          <img src="/images/turbotap-logo.png" alt="" className="w-8 h-8 rounded-lg shrink-0" />
-          <h1 className="text-lg font-bold">TurboTap · Admin</h1>
-          {session.role === "user" && <span className="text-[10px] bg-purple-700/60 border border-purple-500/40 rounded-full px-2 py-0.5 text-purple-200 truncate">👤 {session.displayName || session.username}</span>}
-          {session.displayName?.startsWith("🔐") && <span className="text-[10px] bg-amber-700/60 border border-amber-500/40 rounded-full px-2 py-0.5 text-amber-200 truncate">{session.displayName}</span>}
+    <div className="h-screen flex flex-col bg-gray-900 text-white overflow-hidden logo-watermark">
+      <header className="flex items-center justify-between px-3 py-1.5 bg-gray-800 border-b border-gray-700 shrink-0 z-20">
+        <div className="flex items-center gap-2 min-w-0">
+          <img src="/images/turbotap-logo.png" alt="" className="w-6 h-6 rounded" />
+          <span className="font-bold text-sm md:text-base truncate">TurboTap · {selectedSalesPoint?.name || "Getränkewagen"}</span>
         </div>
-        <div className="flex items-center gap-3">
-          <a href="/" className="text-sm text-blue-400 hover:underline">← Kasse</a>
-          <a href="/zapf" className="text-sm text-green-400 hover:underline">Zapfen →</a>
-          <button onClick={handleLogout} className="text-sm text-red-400 hover:text-red-300">Abmelden</button>
+        <div className="flex items-center gap-2">
+          <span className="text-[10px] bg-gray-700 rounded px-1.5 py-0.5 text-gray-300 hidden sm:inline">👤 {session.displayName || session.username}</span>
+          <a href="/zapf" className="text-xs bg-gray-700 hover:bg-gray-600 rounded-lg px-2 py-1 border border-gray-600 font-bold transition-colors">🍺 Zapf</a>
+          <select value={selectedSalesPointId ?? ""} onChange={(e) => setSelectedSalesPointId(parseInt(e.target.value))} className="bg-gray-700 text-white text-xs md:text-sm rounded-lg px-2 py-1 border border-gray-600 focus:border-blue-500 focus:outline-none">
+            {salesPoints.map((sp) => (<option key={sp.id} value={sp.id}>{sp.name}</option>))}
+          </select>
+          {grandTotal > 0 && <span className="text-base md:text-lg font-bold text-green-400 tabular-nums">{grandTotal.toFixed(2)} €</span>}
+          <button onClick={handleLogout} className="text-[10px] text-red-400 hover:text-red-300 ml-0.5" title="Abmelden">🚪</button>
         </div>
       </header>
 
-      <div className="flex border-b border-gray-700 shrink-0">
-        {[["drinks","🍺 Getränke"],["salesPoints","🏪 Verkaufsstellen"],["cups","🥤 Becher"],["orders","📊 Bestellungen"],...(isSuperAdmin ? [["users","👥 Nutzer"],["super","🔐 Super-Admin"]] : [["users","👥 Nutzer"]])].map(([tab,label]) => (
-          <button key={tab} onClick={() => setActiveTab(tab)} className={`flex-1 py-3 text-center font-bold text-sm ${activeTab === tab ? "border-b-2 border-amber-500 text-amber-400" : "text-gray-400"}`}>{label}</button>
-        ))}
-      </div>
+      <div className="flex flex-1 overflow-hidden relative" style={{ minHeight: 0 }}>
+        <aside className="w-14 md:w-16 shrink-0 bg-gray-800/90 border-r border-gray-700 flex flex-col items-center py-1.5 gap-1 overflow-y-auto z-30">
+          <div className="text-[9px] text-gray-400 font-bold text-center mb-0.5 leading-tight">Pfand<br/>zurück</div>
+          <div className="text-[9px] text-amber-400 font-extrabold text-center leading-tight">0,2 l</div>
+          {[1,2,3,4].map((n) => (<button key={`02-${n}`} onClick={() => addDepositReturn("02", n)} className="w-10 h-10 md:w-11 md:h-11 rounded-lg font-bold text-xs md:text-sm bg-amber-600 hover:bg-amber-500 active:bg-amber-700 active:scale-95 transition-all shadow-md flex flex-col items-center justify-center leading-tight"><span>-{n*2}€</span><span className="text-[8px] opacity-80">{n}×</span></button>))}
+          <div className="w-full border-t border-gray-600 my-0.5" />
+          <div className="text-[9px] text-amber-400 font-extrabold text-center leading-tight">0,4 l</div>
+          {[1,2,3,4].map((n) => (<button key={`04-${n}`} onClick={() => addDepositReturn("04", n)} className="w-10 h-10 md:w-11 md:h-11 rounded-lg font-bold text-xs md:text-sm bg-amber-700 hover:bg-amber-600 active:bg-amber-800 active:scale-95 transition-all shadow-md flex flex-col items-center justify-center leading-tight"><span>-{n*2}€</span><span className="text-[8px] opacity-80">{n}×</span></button>))}
+          {hasItems && (<><div className="w-full border-t border-gray-600 my-0.5" />
+            <button onClick={() => setRemoveMode((m) => !m)} className={`w-10 h-10 md:w-11 md:h-11 rounded-lg font-bold text-lg transition-all shadow-md flex items-center justify-center ${removeMode ? "bg-red-500 text-white ring-2 ring-red-300 scale-110" : "bg-gray-700 hover:bg-gray-600 text-gray-300"} active:scale-95`} title="Minus-Modus">−</button></>)}
+          {hasItems && (<><div className="w-full border-t border-gray-600 my-1" />
+            <button onClick={() => setShowCancelConfirm(true)} className="w-10 h-10 md:w-11 md:h-11 rounded-lg font-bold text-[10px] bg-red-700 hover:bg-red-600 active:bg-red-800 active:scale-95 transition-all shadow-md flex items-center justify-center leading-tight z-50">✕<br/>Abbr.</button></>)}
+        </aside>
 
-      <div className="flex-1 p-4 max-w-5xl mx-auto w-full overflow-y-auto">
-
-        {/* DRINKS */}
-        {activeTab === "drinks" && (
-          <div>
-            <div className="flex justify-between items-center mb-4"><h2 className="text-lg font-bold">Getränke</h2>
-              <button onClick={() => { setEditingDrink(null); setFormData({...EMPTY_DRINK}); setFormError(""); setShowDrinkForm(true); }} className="px-4 py-2 rounded-xl bg-green-600 hover:bg-green-500 font-bold text-sm">+ Neues</button></div>
-            {(() => {
-              let lastGroup: string | null = "__NONE__";
-              return drinks.map((d) => {
-                const currentGroup = d.group || null;
-                const showSeparator = currentGroup && currentGroup !== lastGroup;
-                const groupIndex = currentGroup ? groups.indexOf(currentGroup) : -1;
-                if (currentGroup) lastGroup = currentGroup;
+        <main className="flex-1 overflow-y-auto p-1.5 md:p-2 relative">
+          {removeMode && <div className="bg-red-700/60 border border-red-500 rounded-lg px-2 py-1 mb-1.5 text-xs font-bold text-center animate-pulse">⚡ Entfernen-Modus aktiv</div>}
+          {drinks.length === 0 ? (
+            <div className="flex items-center justify-center h-full text-gray-500"><div className="text-center"><p className="text-lg mb-2">Keine Getränke an dieser Stelle</p><a href="/admin" className="text-blue-400 underline text-sm">Admin</a></div></div>
+          ) : (
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-1.5 md:gap-2">
+              {drinkRows.map((row) => {
+                if (row.type === "separator") {
+                  return (
+                    <div key={row.id} className="col-span-full flex items-center gap-2 my-1">
+                      <span className="h-px flex-1 bg-gray-600" />
+                      <span className="text-xs text-gray-400 font-bold uppercase tracking-wider">{row.group}</span>
+                      <span className="h-px flex-1 bg-gray-600" />
+                    </div>
+                  );
+                }
+                const drink = row.drink!;
+                const count = orderItems.get(drink.id)?.quantity || 0;
                 return (
-                  <div key={d.id} className="contents">
-                    {showSeparator && (
-                      <div className="col-span-full flex items-center gap-2 my-2">
-                        <span className="h-px flex-1 bg-gray-600" />
-                        <span className="text-xs text-gray-400 font-bold uppercase tracking-wider">{currentGroup}</span>
-                        {currentGroup && (
-                          <div className="flex gap-0.5">
-                            <button onClick={() => handleSortGroup(currentGroup, "top")} className="px-1.5 py-0.5 rounded bg-purple-700 hover:bg-purple-600 text-[10px] font-bold" title="Gruppe ganz nach oben">⏫</button>
-                            <button onClick={() => handleSortGroup(currentGroup, "up")} className="px-1.5 py-0.5 rounded bg-purple-700 hover:bg-purple-600 text-[10px] font-bold" title="Gruppe eins nach oben">⇡</button>
-                            <button onClick={() => handleSortGroup(currentGroup, "down")} className="px-1.5 py-0.5 rounded bg-purple-700 hover:bg-purple-600 text-[10px] font-bold" title="Gruppe eins nach unten">⇣</button>
-                            <button onClick={() => handleSortGroup(currentGroup, "bottom")} className="px-1.5 py-0.5 rounded bg-purple-700 hover:bg-purple-600 text-[10px] font-bold" title="Gruppe ganz nach unten">⏬</button>
-                          </div>
-                        )}
-                        <span className="h-px flex-1 bg-gray-600" />
-                      </div>
-                    )}
-                    <div className="bg-gray-800 rounded-xl p-3 flex items-center gap-3 border border-gray-700 mb-2">
-                      <div className="w-10 h-10 rounded-lg shrink-0 flex items-center justify-center font-bold text-white text-xs" style={{backgroundColor:d.color}}>{d.name.charAt(0)}</div>
-                      <div className="flex-1 min-w-0"><div className="font-bold truncate flex items-center gap-2">{d.name}{d.isPourDrink && <span className="text-[10px] bg-orange-600 px-1.5 py-0.5 rounded text-white">ZAPF</span>}</div>
-                        <div className="text-xs text-gray-400"><span className="text-green-400 font-bold">{d.priceGross.toFixed(2)} € brutto</span> · {d.taxRate}% MwSt. · {d.hasDeposit ? `${d.depositAmount.toFixed(2)} € Pfand · ${d.cupSize==="02"?"0,2L":"0,4L"}` : "Kein Pfand"}{d.group && <span className="ml-1 text-purple-400">· 📁 {d.group}</span>}{d.salesPointIds?.length ? ` · an ${d.salesPointIds.length} Stelle(n)` : " · überall"}</div></div>
-                      <div className="flex flex-col gap-0.5">
-                        <button onClick={() => handleSortDrink(d.id, "top")} className="px-1.5 py-0.5 rounded bg-blue-700 hover:bg-blue-600 text-[10px] font-bold" title="Ganz nach oben">⏫</button>
-                        <button onClick={() => handleSortDrink(d.id, "up")} className="px-1.5 py-0.5 rounded bg-blue-700 hover:bg-blue-600 text-[10px] font-bold" title="Eins nach oben">⇡</button>
-                        <button onClick={() => handleSortDrink(d.id, "down")} className="px-1.5 py-0.5 rounded bg-blue-700 hover:bg-blue-600 text-[10px] font-bold" title="Eins nach unten">⇣</button>
-                        <button onClick={() => handleSortDrink(d.id, "bottom")} className="px-1.5 py-0.5 rounded bg-blue-700 hover:bg-blue-600 text-[10px] font-bold" title="Ganz nach unten">⏬</button>
-                      </div>
-                      <button onClick={() => { openEditDrink(d); setShowDrinkForm(true); }} className="px-3 py-1.5 rounded-lg bg-gray-600 hover:bg-gray-500 text-sm">✏️</button>
-                      <button onClick={() => handleDeleteDrink(d.id)} className="px-3 py-1.5 rounded-lg bg-red-900/50 hover:bg-red-800/50 text-sm">🗑️</button>
-                    </div>
-                  </div>
+                  <button key={drink.id} onClick={() => addDrink(drink)} className={`relative rounded-xl p-2 md:p-3 text-left active:scale-[0.97] transition-all shadow-md border ${removeMode && count > 0 ? "border-red-400 border-2" : "border-white/10 hover:border-white/30"} min-h-[80px] md:min-h-[100px] flex flex-col justify-between`}
+                    style={{ backgroundColor: drink.color, backgroundImage: drink.imageUrl ? `linear-gradient(rgba(0,0,0,0.45), rgba(0,0,0,0.65)), url(${drink.imageUrl})` : undefined, backgroundSize: "cover", backgroundPosition: "center" }}>
+                    {count > 0 && <div className="absolute -top-1.5 -right-1.5 bg-white text-gray-900 rounded-full w-6 h-6 md:w-7 md:h-7 flex items-center justify-center font-extrabold text-sm shadow-lg border border-gray-200">{count}</div>}
+                    {removeMode && count > 0 && <div className="absolute -top-1.5 -left-1.5 bg-red-500 text-white rounded-full w-5 h-5 flex items-center justify-center font-black text-xs shadow-lg">−</div>}
+                    <div className="font-extrabold text-sm md:text-base leading-tight drop-shadow-md">{drink.name}</div>
+                    <div className="mt-auto"><div className="text-lg md:text-xl font-extrabold drop-shadow-md">{drink.priceGross.toFixed(2)} €</div>{drink.hasDeposit && <div className="text-[10px] opacity-80 mt-0.5 drop-shadow">+ {drink.depositAmount.toFixed(2)} € Pfand</div>}<div className="text-[9px] opacity-60 mt-0.5">{drink.taxRate}% MwSt.</div></div>
+                  </button>
                 );
-              });
-            })()}
-          </div>
-        )}
+              })}
+            </div>
+          )}
+        </main>
 
-        {/* SALES POINTS */}
-        {activeTab === "salesPoints" && (
-          <div>
-            <div className="flex justify-between items-center mb-4"><h2 className="text-lg font-bold">Verkaufsstellen</h2>
-              <button onClick={()=>{setSpFormName("");setSpFormError("");setShowSalesPointForm(true);}} className="px-4 py-2 rounded-xl bg-green-600 hover:bg-green-500 font-bold text-sm">+ Neue</button></div>
-            {salesPoints.map((sp)=>(
-              <div key={sp.id} className="bg-gray-800 rounded-xl p-3 flex items-center gap-3 border border-gray-700 mb-2">
-                <div className="w-10 h-10 rounded-lg shrink-0 flex items-center justify-center font-bold text-white text-xs bg-blue-600">{sp.name.charAt(0)}</div>
-                <div className="flex-1 min-w-0"><div className="font-bold">{sp.name}</div><div className="text-xs text-gray-400">Sortierung: {sp.sortOrder}</div></div>
-                <div className="flex flex-col gap-0.5">
-                  <button onClick={() => handleSortSP(sp.id, "top")} className="px-1.5 py-0.5 rounded bg-blue-700 hover:bg-blue-600 text-[10px] font-bold" title="Ganz nach oben">⏫</button>
-                  <button onClick={() => handleSortSP(sp.id, "up")} className="px-1.5 py-0.5 rounded bg-blue-700 hover:bg-blue-600 text-[10px] font-bold" title="Eins nach oben">⇡</button>
-                  <button onClick={() => handleSortSP(sp.id, "down")} className="px-1.5 py-0.5 rounded bg-blue-700 hover:bg-blue-600 text-[10px] font-bold" title="Eins nach unten">⇣</button>
-                  <button onClick={() => handleSortSP(sp.id, "bottom")} className="px-1.5 py-0.5 rounded bg-blue-700 hover:bg-blue-600 text-[10px] font-bold" title="Ganz nach unten">⏬</button>
+        {hasItems && (
+          <div ref={receiptRef} className={`absolute z-40 shadow-2xl border-2 border-gray-500 rounded-xl overflow-hidden select-none ${isDragging ? "cursor-grabbing" : "cursor-grab"} ${receiptMinimized ? "w-auto" : "w-72 md:w-80"}`}
+            style={{ left: receiptPos.x || "auto", top: receiptPos.y || "auto", right: receiptPos.x ? undefined : 8, bottom: receiptPos.y ? undefined : 8 }}>
+            <div onMouseDown={handleDragStart} onTouchStart={handleDragStart} className="bg-gray-700 px-3 py-2 flex items-center justify-between border-b border-gray-600">
+              <span className="text-xs font-bold text-gray-300 flex items-center gap-1">🖐️ {totalDrinksCount} Getränke</span>
+              <div className="flex items-center gap-1"><button onClick={() => setReceiptMinimized((p) => !p)} className="text-gray-400 hover:text-white text-xs px-2 py-0.5 rounded bg-gray-600 hover:bg-gray-500">{receiptMinimized ? "▲" : "▼"}</button><button onClick={() => { setReceiptPos({ x:0, y:0 }); setReceiptMinimized(false); }} className="text-gray-400 hover:text-white text-xs px-2 py-0.5 rounded bg-gray-600 hover:bg-gray-500">⌂</button></div>
+            </div>
+            {!receiptMinimized && (
+              <div className="bg-gray-800">
+                <div className="px-3 py-2 space-y-1 max-h-48 overflow-y-auto">
+                  {items.map((item) => (<div key={item.drinkId} className="flex justify-between items-center text-sm md:text-base border-b border-gray-700/40 py-1">
+                    <span className="flex-1 min-w-0 truncate font-medium flex items-center gap-1.5"><button onClick={() => { setEditingItem(item.drinkId); setEditQuantity(item.quantity.toString()); }} className="text-blue-400 hover:text-blue-300 text-xs underline shrink-0">✎</button><span className="truncate">{item.drinkName} <span className="text-gray-400 text-xs">×{item.quantity}</span></span></span>
+                    <span className="tabular-nums font-semibold text-sm md:text-base">{(item.unitPriceGross * item.quantity).toFixed(2)} €</span>
+                    <button onClick={() => removeItem(item.drinkId)} className="ml-1.5 text-red-400 hover:text-red-300 text-sm px-1 shrink-0">✕</button>
+                  </div>))}
+                  {totalDepositCharged > 0 && <div className="flex justify-between items-baseline text-sm md:text-base py-1 text-amber-400"><span>Pfand (behalten)</span><span className="tabular-nums font-semibold">+{totalDepositCharged.toFixed(2)} €</span></div>}
+                  {depositReturned > 0 && <div className="flex justify-between items-baseline text-sm md:text-base py-1 text-red-400"><span>Pfand zurück ({depositReturned02>0 && `${depositReturned02}× 0,2l`}{depositReturned02>0 && depositReturned04>0 && " + "}{depositReturned04>0 && `${depositReturned04}× 0,4l`})</span><span className="tabular-nums font-semibold">-{totalDepositReturn.toFixed(2)} €</span></div>}
                 </div>
-                <button onClick={()=>{setEditingSalesPoint(sp);setSpEditName(sp.name);}} className="px-3 py-1.5 rounded-lg bg-gray-600 hover:bg-gray-500 text-sm">✏️</button>
-                <button onClick={()=>handleDeleteSP(sp.id)} className="px-3 py-1.5 rounded-lg bg-red-900/50 hover:bg-red-800/50 text-sm">🗑️</button>
-              </div>
-            ))}
-          </div>
-        )}
-
-        {/* CUPS */}
-        {activeTab === "cups" && <CupsTab cupCounters={cupCounters} getSPName={getSPName} cupTotals={cupTotals} setCupResetTarget={setCupResetTarget} setShowCupResetConfirm={setShowCupResetConfirm} />}
-
-        {/* ORDERS */}
-        {activeTab === "orders" && (
-          <div>
-            <h2 className="text-lg font-bold mb-4">Bestellübersicht</h2>
-
-            {pourStats.length > 0 && (
-              <div className="mb-6 bg-gray-800 rounded-xl border border-gray-700 p-4">
-                <div className="flex justify-between items-center mb-3"><h3 className="text-md font-bold">🍺 Zapf-Statistik {pourerFilter && <span className="text-gray-400 text-xs">({pourerFilter})</span>}</h3>
-                  <button onClick={()=>setShowPourResetConfirm(true)} className="px-3 py-1.5 rounded-lg bg-red-800 hover:bg-red-700 text-xs font-bold border border-red-500/30">🔄 nullen</button></div>
-                <div className="grid grid-cols-3 gap-3">{pourStats.map((s)=>(
-                  <div key={s.drinkName} className="bg-gray-700/50 rounded-lg p-3 text-center"><div className="text-xs text-gray-400">{s.drinkName}</div><div className="text-2xl font-bold text-green-400">{s.totalPoured}</div><div className="text-[10px] text-gray-500">gezapft</div></div>
-                ))}</div>
+                <div className="border-t border-gray-600 px-3 py-2 bg-gray-700/50">
+                  <div className="flex justify-between items-center text-sm md:text-base"><span className="text-gray-300">Getränke: <span className="tabular-nums font-bold">{totalDrinkGross.toFixed(2)} €</span></span>{netDeposit !== 0 && <span className="text-amber-400 text-xs md:text-sm">Pfand: {netDeposit > 0 ? "+" : ""}<span className="tabular-nums">{netDeposit.toFixed(2)} €</span></span>}</div>
+                  <div className="flex justify-between items-center mt-1"><span className="font-bold text-base md:text-lg text-green-400 tabular-nums">Gesamt: {grandTotal.toFixed(2)} €</span></div>
+                </div>
+                <div className="px-3 pb-2 pt-1 flex gap-2">
+                  {hasPourDrinks && <button onClick={sendToPour} className={`w-12 h-12 rounded-full font-bold text-xs shrink-0 flex flex-col items-center justify-center transition-all shadow-lg ${pourSent ? "bg-green-500" : "bg-orange-600 hover:bg-orange-500 active:bg-orange-700"} active:scale-95 border-2 border-white/20`}><span className="text-base">{pourSent ? "✓" : "🍺"}</span><span className="text-[8px]">{pourSent ? "OK!" : "Zapf"}</span></button>}
+                  <button onClick={() => setShowResetConfirm(true)} className="flex-1 py-2.5 rounded-xl font-bold text-sm md:text-base bg-red-600 hover:bg-red-500 active:bg-red-700 active:scale-[0.98] transition-all shadow-lg border border-red-400/30">✅ Abschließen</button>
+                </div>
               </div>
             )}
-
-            <div className="mb-4 flex items-end gap-3 flex-wrap">
-              <div className="min-w-[150px]"><label className="block text-xs text-gray-400 mb-1">Verkaufsstelle</label>
-                <select value={orderFilter} onChange={(e)=>setOrderFilter(e.target.value)} className="w-full bg-gray-700 text-white text-sm rounded-lg px-3 py-2 border border-gray-600 focus:border-blue-500 focus:outline-none">
-                  <option value="">Alle</option>{salesPoints.map((sp)=>(<option key={sp.id} value={sp.id}>{sp.name}</option>))}</select></div>
-              <div className="min-w-[150px]"><label className="block text-xs text-gray-400 mb-1">Kassierer</label>
-                <div className="flex gap-1"><input list="cashierList" value={cashierFilter} onChange={(e)=>setCashierFilter(e.target.value)} className="w-full bg-gray-700 text-white text-sm rounded-lg px-3 py-2 border border-gray-600 focus:border-blue-500 focus:outline-none" placeholder="Name" />
-                  <datalist id="cashierList">{cashierNames.map((n)=> <option key={n} value={n} />)}</datalist>
-                  {cashierFilter && <button onClick={()=>setCashierFilter("")} className="px-2 text-red-400 text-xs">✕</button>}</div></div>
-              <div className="min-w-[150px]"><label className="block text-xs text-gray-400 mb-1">Zapfer</label>
-                <div className="flex gap-1"><input list="pourerList" value={pourerFilter} onChange={(e)=>{setPourerFilter(e.target.value);}} className="w-full bg-gray-700 text-white text-sm rounded-lg px-3 py-2 border border-gray-600 focus:border-blue-500 focus:outline-none" placeholder="Name" />
-                  <datalist id="pourerList">{pourerNames.map((n)=> <option key={n} value={n} />)}</datalist>
-                  {pourerFilter && <button onClick={()=>setPourerFilter("")} className="px-2 text-red-400 text-xs">✕</button>}</div></div>
-              <div className="flex gap-2">
-                {orderFilter && <button onClick={()=>{setResetTarget(orderFilter);setShowResetConfirm(true);}} className="px-3 py-2 rounded-xl bg-red-700 hover:bg-red-600 text-sm font-bold border border-red-500/30">🔄 {getSPName(parseInt(orderFilter))} reset</button>}
-                <button onClick={()=>{setResetTarget("");setShowResetConfirm(true);}} className="px-3 py-2 rounded-xl bg-red-800 hover:bg-red-700 text-sm font-bold border border-red-500/30">🔄 Alle reset</button>
-              </div>
-            </div>
-
-            {totals && (
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
-                <div className="bg-gray-800 rounded-xl p-3 border border-gray-700"><div className="text-xs text-gray-400">Bestellungen</div><div className="text-2xl font-bold">{totals.totalOrders}</div></div>
-                <div className="bg-gray-800 rounded-xl p-3 border border-gray-700"><div className="text-xs text-gray-400">Umsatz</div><div className="text-2xl font-bold text-green-400">{(totals.totalRevenue||0).toFixed(2)} €</div></div>
-                <div className="bg-gray-800 rounded-xl p-3 border border-gray-700"><div className="text-xs text-gray-400">Pfand ein</div><div className="text-2xl font-bold text-amber-400">{(totals.totalDepositsCharged||0).toFixed(2)} €</div></div>
-                <div className="bg-gray-800 rounded-xl p-3 border border-gray-700"><div className="text-xs text-gray-400">Pfand aus</div><div className="text-2xl font-bold text-red-400">-{(totals.totalDepositsReturned||0).toFixed(2)} €</div></div>
-              </div>
-            )}
-
-            {drinkSummary.length > 0 && (
-              <div className="mb-6"><h3 className="text-md font-bold mb-2">Zusammenfassung</h3>
-                <div className="bg-gray-800 rounded-xl border border-gray-700 overflow-hidden"><table className="w-full text-sm"><thead><tr className="text-gray-400 text-xs bg-gray-700/50"><th className="text-left p-3 font-medium">Getränk</th><th className="text-right p-3 font-medium">Menge</th><th className="text-right p-3 font-medium">Umsatz</th><th className="text-right p-3 font-medium">Pfand</th></tr></thead>
-                  <tbody>{drinkSummary.map((item,i)=>(<tr key={i} className="border-t border-gray-700/50"><td className="p-3 font-medium">{item.drinkName}</td><td className="p-3 text-right tabular-nums">{item.totalQuantity}</td><td className="p-3 text-right tabular-nums text-green-400">{(item.totalGross||0).toFixed(2)} €</td><td className="p-3 text-right tabular-nums text-amber-400">{(item.totalDeposit||0).toFixed(2)} €</td></tr>))}</tbody></table></div>
-              </div>
-            )}
-
-            <h3 className="text-md font-bold mb-2">Einzelbestellungen {cashierFilter && <span className="text-gray-400 text-xs">(👤 {cashierFilter})</span>}</h3>
-            {orders.length === 0 ? <p className="text-gray-500 text-center py-8">Keine Bestellungen vorhanden.</p> : orders.map((o)=>(
-              <button key={o.id} onClick={()=>showOrderDetail(o)} className="w-full text-left bg-gray-800 rounded-xl p-3 border border-gray-700 mb-2 flex items-center justify-between hover:border-amber-500 transition-colors">
-                <div><div className="font-bold text-sm">#{o.id}</div>
-                  <div className="text-xs text-gray-400">{new Date(o.createdAt).toLocaleString("de-DE")}</div>
-                  <div className="text-xs text-blue-400">{getSPName(o.salesPointId)}</div>
-                  {o.cashierName && <div className="text-xs text-green-400">👤 {o.cashierName}</div>}
-                </div>
-                <div className="text-right"><div className="font-bold text-green-400">{o.totalGross.toFixed(2)} €</div>
-                  <div className="text-xs text-gray-400">Pfand: {o.totalDeposit.toFixed(2)} €{o.totalDepositReturned>0 && ` (−${o.totalDepositReturned.toFixed(2)})`}</div>
-                </div>
-              </button>
-            ))}
-          </div>
-        )}
-
-        {/* USERS TAB (for tenant admin, shows UsersTab) */}
-        {activeTab === "users" && session.role === "admin" && !isSuperAdmin && <UsersTabSimple />}
-
-        {/* SUPER ADMIN */}
-        {activeTab === "super" && isSuperAdmin && (
-          <div>
-            <h2 className="text-lg font-bold mb-4">🔐 Super-Admin · Mandanten-Verwaltung</h2>
-            <p className="text-xs text-gray-400 mb-4">Klicke auf einen Mandanten, um in dessen Umgebung zu wechseln und Einstellungen zu bearbeiten.</p>
-            <div className="space-y-2">
-              {tenants.map((t) => (
-                <div key={t.userId} className="bg-gray-800 rounded-xl p-4 border border-gray-700">
-                  <div className="flex items-center justify-between mb-3 cursor-pointer" onClick={() => switchToTenant(t.userId)}>
-                    <div><div className="font-bold text-base">{t.username}</div>
-                      <div className="text-xs text-gray-400">{t.isActive ? "✅ Aktiv" : "⏸️ Deaktiviert"} · Lizenz bis {new Date(t.expiresAt).toLocaleDateString("de-DE")}</div></div>
-                    <div className="text-right text-xs">
-                      <div className="tabular-nums">{t.drinks} 🍺 · {t.orders} 📋 · {t.pours} 🍻</div>
-                      <div className="text-amber-400 text-[10px] mt-1">👉 Klicken zum Bearbeiten</div>
-                    </div>
-                  </div>
-                  <div className="flex gap-2 pt-2 border-t border-gray-700">
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setUsernameTargetUser(t);
-                        setNewUsername(t.username);
-                        setShowUsernameModal(true);
-                      }}
-                      className="flex-1 px-3 py-1.5 rounded-lg bg-blue-700 hover:bg-blue-600 text-xs font-bold"
-                    >
-                      ✏️ Username
-                    </button>
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setPasswordTargetUser(t);
-                        setShowPasswordModal(true);
-                      }}
-                      className="flex-1 px-3 py-1.5 rounded-lg bg-green-700 hover:bg-green-600 text-xs font-bold"
-                    >
-                      🔑 Passwort
-                    </button>
-                  </div>
-                </div>
-              ))}
-            </div>
-            <div className="mt-6 p-4 bg-gray-800 rounded-xl border border-gray-700">
-              <h3 className="font-bold mb-2">⚡ Direkt-Login (admin)</h3>
-              <button onClick={() => switchToTenant(0)} className="px-4 py-2 rounded-xl bg-amber-600 hover:bg-amber-500 font-bold text-sm">🔙 Zurück zum eigenen Admin</button>
-            </div>
           </div>
         )}
       </div>
 
-      {/* Drink Form Modal */}
-      {showDrinkForm && <DrinkFormModal editingDrink={editingDrink} formData={formData} formError={formError} setFormData={setFormData} handleSave={handleSaveDrink} salesPoints={salesPoints} drinks={drinks} onClose={()=>setShowDrinkForm(false)} />}
-      {showSalesPointForm && <SimpleModal title="Neue Verkaufsstelle" error={spFormError} value={spFormName} onChange={setSpFormName} onSubmit={handleSaveSP} onClose={()=>setShowSalesPointForm(false)} />}
-      {editingSalesPoint && <SimpleModal title="Bearbeiten" error="" value={spEditName} onChange={setSpEditName} onSubmit={handleUpdateSP} onClose={()=>setEditingSalesPoint(null)} />}
-      {showResetConfirm && <ConfirmModal title="Zähler zurücksetzen?" onConfirm={handleResetOrders} onClose={()=>setShowResetConfirm(false)}><p className="text-sm text-gray-300 text-center">{resetTarget ? `Bestellungen für "${getSPName(parseInt(resetTarget))}" löschen.` : "ALLE Bestellungen löschen."}</p></ConfirmModal>}
-      {showPourResetConfirm && <ConfirmModal title="Zapf nullen?" onConfirm={handleResetPour} onClose={()=>setShowPourResetConfirm(false)}><p className="text-sm text-gray-300 text-center">Zapf-Statistiken löschen.</p></ConfirmModal>}
-      {showCupResetConfirm && <ConfirmModal title="Becher nullen?" onConfirm={handleResetCups} onClose={()=>setShowCupResetConfirm(false)}><p className="text-sm text-gray-300 text-center">{cupResetTarget ? `Becher für "${getSPName(parseInt(cupResetTarget))}" nullen.` : "ALLE Becher nullen."}</p></ConfirmModal>}
-
-      {/* Order Detail Modal */}
-      {orderDetail && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
-          <div className="bg-gray-800 rounded-2xl w-full max-w-md shadow-2xl border border-gray-600 max-h-[90vh] flex flex-col">
-            <div className="p-4 border-b border-gray-700 shrink-0">
-              <div className="flex items-center gap-2 mb-1"><img src="/images/turbotap-logo.png" alt="" className="w-6 h-6 rounded" /><h2 className="text-xl font-bold">TurboTap · Rechnung #{orderDetail.order.id}</h2></div>
-              <p className="text-xs text-gray-400">{new Date(orderDetail.order.createdAt).toLocaleString("de-DE")} · {getSPName(orderDetail.order.salesPointId)}</p>
-              {orderDetail.order.cashierName && <p className="text-xs text-green-400">👤 {orderDetail.order.cashierName}</p>}
-            </div>
-            <div className="flex-1 overflow-y-auto p-4 space-y-2">
-              {orderDetail.items.map((item,i)=>(
-                <div key={i} className="flex justify-between items-center border-b border-gray-700/40 pb-2">
-                  <span className="font-medium">{item.quantity}× {item.drinkName}</span>
-                  <span className="tabular-nums font-semibold">{(item.unitPriceGross * item.quantity).toFixed(2)} €</span>
-                </div>
-              ))}
-              {orderDetail.order.totalDeposit > 0 && <div className="text-amber-400 flex justify-between text-sm pt-2"><span>Pfand</span><span className="tabular-nums">+{orderDetail.order.totalDeposit.toFixed(2)} €</span></div>}
-              {orderDetail.order.totalDepositReturned > 0 && <div className="text-red-400 flex justify-between text-sm"><span>Pfand zurück</span><span className="tabular-nums">-{orderDetail.order.totalDepositReturned.toFixed(2)} €</span></div>}
-              <div className="border-t border-gray-600 pt-2 mt-2 flex justify-between text-lg font-bold"><span>Gesamt</span><span className="text-green-400 tabular-nums">{orderDetail.order.totalGross.toFixed(2)} €</span></div>
-            </div>
-            <div className="p-4 border-t border-gray-700 shrink-0"><button onClick={()=>setOrderDetail(null)} className="w-full py-3 rounded-xl font-bold bg-amber-600 hover:bg-amber-500 transition-all">Schließen</button></div>
-          </div>
-        </div>
-      )}
-
-      {/* Username ändern Modal */}
-      {showUsernameModal && usernameTargetUser && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
-          <div className="bg-gray-800 rounded-2xl p-6 w-full max-w-sm shadow-2xl border border-gray-700">
-            <h2 className="text-xl font-bold mb-4">Username ändern</h2>
-            <div className="mb-4">
-              <label className="block text-sm text-gray-400 mb-1">Neuer Username</label>
-              <input
-                type="text"
-                value={newUsername}
-                onChange={(e) => setNewUsername(e.target.value)}
-                className="w-full px-4 py-2.5 rounded-xl bg-gray-700 text-white border border-gray-600 focus:border-blue-500 focus:outline-none"
-                autoFocus
-              />
-            </div>
-            <div className="flex gap-3">
-              <button
-                onClick={() => {
-                  setShowUsernameModal(false);
-                  setUsernameTargetUser(null);
-                  setNewUsername("");
-                }}
-                className="flex-1 py-3 rounded-xl font-bold bg-gray-600 hover:bg-gray-500 transition-all"
-              >
-                Abbrechen
-              </button>
-              <button
-                onClick={handleChangeUsername}
-                className="flex-1 py-3 rounded-xl font-bold bg-blue-600 hover:bg-blue-500 transition-all"
-              >
-                Ändern
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Passwort ändern Modal */}
-      {showPasswordModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
-          <PasswordChangeModal
-            isAdmin={true}
-            targetUserId={passwordTargetUser?.userId}
-            targetUsername={passwordTargetUser?.username}
-            onClose={() => {
-              setShowPasswordModal(false);
-              setPasswordTargetUser(null);
-            }}
-          />
-        </div>
-      )}
-    </div>
-  );
-
-  function openEditDrink(d: Drink) {
-    setEditingDrink(d);
-    setFormData({
-      name: d.name, priceGross: d.priceGross.toString(), taxRate: d.taxRate.toString(),
-      hasDeposit: d.hasDeposit, depositAmount: d.depositAmount.toString(), cupSize: d.cupSize,
-      color: d.color, imageUrl: d.imageUrl || "", sortOrder: d.sortOrder.toString(),
-      isPourDrink: d.isPourDrink, salesPointIds: d.salesPointIds || [], group: d.group || "",
-    });
-    setFormError("");
-  }
-}
-
-// --- SUBCOMPONENTS ---
-
-function DrinkFormModal({editingDrink,formData,formError,setFormData,handleSave,salesPoints,drinks,onClose}:any) {
-  const existingGroups = Array.from(new Set((drinks || []).map((d:any) => d.group).filter(Boolean))) as string[];
-  const nettoPreview = formData.priceGross ? (parseFloat(formData.priceGross) / (1 + parseFloat(formData.taxRate || "19") / 100)).toFixed(2) : "0.00";
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
-      <form onSubmit={handleSave} className="bg-gray-800 rounded-2xl p-6 w-full max-w-md shadow-2xl border border-gray-700 max-h-[90vh] overflow-y-auto">
-        <h2 className="text-xl font-bold mb-4">{editingDrink?"Getränk bearbeiten":"Neues Getränk"}</h2>
-        {formError && <div className="bg-red-900/50 text-red-300 text-sm p-3 rounded-lg mb-4 border border-red-700">{formError}</div>}
-        <div className="space-y-4">
-          <div><label className="block text-sm text-gray-400 mb-1">Name *</label><input type="text" value={formData.name} onChange={(e)=>setFormData({...formData,name:e.target.value})} className="w-full px-4 py-2.5 rounded-xl bg-gray-700 text-white border border-gray-600 focus:border-blue-500 focus:outline-none" /></div>
-          <div className="grid grid-cols-2 gap-3">
-            <div><label className="block text-sm text-gray-400 mb-1">Bruttopreis (€) *</label><input type="number" step="0.01" value={formData.priceGross} onChange={(e)=>setFormData({...formData,priceGross:e.target.value})} className="w-full px-4 py-2.5 rounded-xl bg-gray-700 text-white border border-gray-600 focus:border-blue-500 focus:outline-none" placeholder="3.00" /></div>
-            <div><label className="block text-sm text-gray-400 mb-1">MwSt.</label><select value={formData.taxRate} onChange={(e)=>setFormData({...formData,taxRate:e.target.value})} className="w-full px-4 py-2.5 rounded-xl bg-gray-700 text-white border border-gray-600 focus:border-blue-500 focus:outline-none"><option value="19">19%</option><option value="7">7%</option></select></div>
-          </div>
-          {formData.priceGross && <p className="text-xs text-green-400 tabular-nums">= {nettoPreview} € netto</p>}
-          <label className="flex items-center gap-2 cursor-pointer"><input type="checkbox" checked={formData.hasDeposit} onChange={(e)=>setFormData({...formData,hasDeposit:e.target.checked})} className="w-5 h-5 rounded accent-amber-500" /><span className="text-sm text-gray-300">Becherpfand</span></label>
-          {formData.hasDeposit && <div className="grid grid-cols-2 gap-3"><div><label className="block text-sm text-gray-400 mb-1">Pfand (€)</label><input type="number" step="0.01" value={formData.depositAmount} onChange={(e)=>setFormData({...formData,depositAmount:e.target.value})} className="w-full px-4 py-2.5 rounded-xl bg-gray-700 text-white border border-gray-600 focus:border-blue-500 focus:outline-none" /></div>
-            <div><label className="block text-sm text-gray-400 mb-1">Bechergröße</label><select value={formData.cupSize} onChange={(e)=>setFormData({...formData,cupSize:e.target.value})} className="w-full px-4 py-2.5 rounded-xl bg-gray-700 text-white border border-gray-600 focus:border-blue-500 focus:outline-none"><option value="02">0,2 l</option><option value="04">0,4 l</option></select></div></div>}
-          <label className="flex items-center gap-2 cursor-pointer"><input type="checkbox" checked={formData.isPourDrink} onChange={(e)=>setFormData({...formData,isPourDrink:e.target.checked})} className="w-5 h-5 rounded accent-orange-500" /><span className="text-sm text-gray-300">Zapfgetränk</span></label>
-          <div><label className="block text-sm text-gray-400 mb-1">Gruppe (optional)</label>
-            <input type="text" list="groupList" value={formData.group} onChange={(e)=>setFormData({...formData,group:e.target.value})} className="w-full px-4 py-2.5 rounded-xl bg-gray-700 text-white border border-gray-600 focus:border-blue-500 focus:outline-none" placeholder="z.B. Kaltgetränke, Heißgetränke, Alkoholfrei" />
-            <datalist id="groupList">{existingGroups.map((g)=>(<option key={g} value={g} />))}</datalist>
-            <p className="text-[10px] text-gray-500 mt-1">Getränke mit gleicher Gruppe werden im Frontend zusammengefasst.</p>
-          </div>
-          <div><label className="block text-sm text-gray-400 mb-1">Verfügbar an Verkaufsstellen</label>
-            <div className="space-y-1 max-h-32 overflow-y-auto bg-gray-700/50 rounded-lg p-2">
-              {salesPoints.length === 0 ? <p className="text-xs text-gray-400">Keine Verkaufsstellen vorhanden</p> : salesPoints.map((sp:any) => (
-                <label key={sp.id} className="flex items-center gap-2 cursor-pointer">
-                  <input type="checkbox" checked={formData.salesPointIds?.includes(sp.id) || false} onChange={(e) => {
-                    const ids = formData.salesPointIds || [];
-                    setFormData({
-                      ...formData,
-                      salesPointIds: e.target.checked ? [...ids, sp.id] : ids.filter((i:number) => i !== sp.id),
-                    });
-                  }} className="w-4 h-4 rounded accent-amber-500" />
-                  <span className="text-xs text-gray-300">{sp.name}</span>
-                </label>
-              ))}
-            </div>
-            <p className="text-[10px] text-gray-500 mt-1">Keine Auswahl = überall verfügbar</p>
-          </div>
-          <div><label className="block text-sm text-gray-400 mb-1">Farbe</label><div className="flex items-center gap-3"><input type="color" value={formData.color} onChange={(e)=>setFormData({...formData,color:e.target.value})} className="w-12 h-10 rounded-lg border border-gray-600 cursor-pointer" /><span className="text-sm text-gray-400 font-mono">{formData.color}</span></div></div>
-          <div><label className="block text-sm text-gray-400 mb-1">Bild-URL</label><input type="url" value={formData.imageUrl} onChange={(e)=>setFormData({...formData,imageUrl:e.target.value})} className="w-full px-4 py-2.5 rounded-xl bg-gray-700 text-white border border-gray-600 focus:border-blue-500 focus:outline-none" /></div>
-          <div><label className="block text-sm text-gray-400 mb-1">Sortierung</label><input type="number" value={formData.sortOrder} onChange={(e)=>setFormData({...formData,sortOrder:e.target.value})} className="w-full px-4 py-2.5 rounded-xl bg-gray-700 text-white border border-gray-600 focus:border-blue-500 focus:outline-none" /></div>
-        </div>
-        <div className="flex gap-3 mt-6"><button type="button" onClick={onClose} className="flex-1 py-3 rounded-xl font-bold bg-gray-600 hover:bg-gray-500">Abbrechen</button><button type="submit" className="flex-1 py-3 rounded-xl font-bold bg-amber-600 hover:bg-amber-500">Speichern</button></div>
-      </form>
+      {showResetConfirm && (<div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4"><div className="bg-gray-800 rounded-2xl p-5 max-w-sm w-full shadow-2xl border border-gray-600"><h2 className="text-lg font-bold mb-2 text-center">⚠️ Bestellung abschließen?</h2><div className="mb-3 bg-gray-700/50 rounded-lg p-2"><label className="block text-xs text-gray-400 mb-1">Verkaufsstelle</label><select value={selectedSalesPointId ?? ""} onChange={(e) => setSelectedSalesPointId(parseInt(e.target.value))} className="w-full bg-gray-700 text-white text-sm rounded-lg px-2 py-1.5 border border-gray-600 focus:border-blue-500 focus:outline-none">{salesPoints.map((sp) => (<option key={sp.id} value={sp.id}>{sp.name}</option>))}</select></div><div className="text-center mb-3"><p className="text-gray-300 text-sm">Gesamtbetrag:</p><p className="text-3xl font-extrabold text-green-400 tabular-nums">{grandTotal.toFixed(2)} €</p>{netDeposit !== 0 && <p className="text-xs text-amber-400">(inkl. Pfand: {netDeposit > 0 ? "+" : ""}{netDeposit.toFixed(2)} €)</p>}<p className="text-xs text-gray-400">{totalDrinksCount} Getränke · {items.length} Positionen · {session?.displayName || session?.username}</p></div>{hasPourDrinks && <button onClick={sendToPour} disabled={pourSent} className={`w-full mb-3 py-2.5 rounded-lg text-sm font-bold border transition-all ${pourSent ? "bg-green-600 border-green-400 text-white cursor-default" : "bg-orange-600 hover:bg-orange-500 border-orange-400/40 text-white"}`}>{pourSent ? "✓ An Zapfanlage gesendet" : `🍺 ${pourItemCount}× an Zapfanlage senden`}</button>}<button onClick={() => setShowCalculator(true)} className="w-full mb-3 py-2 rounded-lg bg-blue-700/50 hover:bg-blue-600/50 text-blue-300 text-sm font-medium border border-blue-600/30 transition-all">🧮 Wechselgeld</button><p className="text-xs text-gray-400 mb-4 text-center">Bestellung speichern und Zähler zurücksetzen.</p><div className="flex gap-3"><button onClick={() => setShowResetConfirm(false)} className="flex-1 py-2.5 rounded-xl font-bold bg-gray-600 hover:bg-gray-500 transition-all">Abbrechen</button><button onClick={handleReset} className="flex-1 py-2.5 rounded-xl font-bold bg-amber-600 hover:bg-amber-500 transition-all border border-amber-400/30">Ja, abschließen</button></div></div></div>)}
+      {showCancelConfirm && (<div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/70 p-4"><div className="bg-gray-800 rounded-2xl p-5 max-w-sm w-full shadow-2xl border border-gray-600"><h2 className="text-lg font-bold mb-3 text-center text-red-400">⚠️ Abbrechen?</h2><div className="text-center mb-4"><p className="text-sm text-gray-300">Bestellung wirklich verwerfen?</p>{pourSent && <p className="text-xs text-amber-400 mt-1">🍺 Zapf-Daten werden storniert.</p>}<p className="text-xs text-gray-400 mt-1">{totalDrinksCount} Getränke · {grandTotal.toFixed(2)} €</p></div><div className="flex gap-3"><button onClick={() => setShowCancelConfirm(false)} className="flex-1 py-2.5 rounded-xl font-bold bg-gray-600">Weiter</button><button onClick={cancelOrder} className="flex-1 py-2.5 rounded-xl font-bold bg-red-600">Verwerfen</button></div></div></div>)}
+      {editingItem !== null && (<div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4"><div className="bg-gray-800 rounded-2xl p-5 max-w-xs w-full shadow-2xl border border-gray-600"><h3 className="text-lg font-bold mb-3 text-center">Anzahl ändern</h3><p className="text-sm text-gray-300 text-center mb-3">{orderItems.get(editingItem)?.drinkName}</p><input type="number" min="0" value={editQuantity} onChange={(e) => setEditQuantity(e.target.value)} className="w-full px-3 py-2 rounded-xl bg-gray-700 text-white text-lg font-bold text-center border border-gray-600 focus:border-blue-500 focus:outline-none tabular-nums mb-4" autoFocus /><div className="flex gap-3"><button onClick={() => setEditingItem(null)} className="flex-1 py-2.5 rounded-xl font-bold bg-gray-600">Abbrechen</button><button onClick={() => { const qty = parseInt(editQuantity); if (!isNaN(qty)) updateItemQuantity(editingItem, qty); setEditingItem(null); }} className="flex-1 py-2.5 rounded-xl font-bold bg-amber-600">Speichern</button></div></div></div>)}
+      {showCalculator && <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/70 p-4"><CalculatorModal total={grandTotal} onClose={() => setShowCalculator(false)} /></div>}
+      {showSuccess && lastOrder && !handout && (<div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 bg-green-700 text-white px-5 py-2.5 rounded-xl shadow-2xl font-bold text-sm animate-bounce">✅ #{lastOrder.orderId} – {lastOrder.totalGross.toFixed(2)} €</div>)}
+      {handout && (<div className="fixed inset-0 z-[70] flex items-center justify-center bg-gray-900/95 p-4"><div className="bg-gray-800 rounded-2xl w-full max-w-md shadow-2xl border border-gray-600 max-h-[92vh] flex flex-col"><div className="p-4 border-b border-gray-700 shrink-0"><h2 className="text-xl font-extrabold text-center">🥤 Ausgabe – Bestellung #{handout.orderId}</h2><p className="text-xs text-gray-400 text-center mt-1">{handout.salesPointName} · {handout.totalGross.toFixed(2)} €{handout.depositReturnedCount > 0 && <span className="text-amber-400"> · {handout.depositReturnedCount} Becher zurück</span>}</p></div><div className="flex-1 overflow-y-auto p-3 space-y-2">{handout.items.map((item) => { const done = !!handout.checked[item.drinkId]; const dc = drinks.find((d) => d.id === item.drinkId)?.color || "#6B7280"; return (<button key={item.drinkId} onClick={() => setHandout((h) => h ? {...h, checked:{...h.checked, [item.drinkId]:!h.checked[item.drinkId]}} : h)} className={`w-full flex items-center gap-3 rounded-xl border-2 px-3 py-3 text-left transition-all ${done ? "bg-green-900/40 border-green-500" : "bg-gray-700/50 border-gray-600"}`}><span className="w-4 h-4 rounded-full shrink-0 border border-white/30" style={{backgroundColor:dc}} /><span className={`flex-1 font-bold ${done ? "line-through text-gray-400" : ""}`}>{item.quantity}× {item.drinkName}{item.isPourDrink && <span className="ml-2 text-[10px] bg-orange-600 px-1.5 py-0.5 rounded text-white">ZAPF</span>}</span><span className={`w-8 h-8 rounded-full flex items-center justify-center text-lg font-black shrink-0 ${done ? "bg-green-500 text-white" : "bg-gray-600 text-gray-400"}`}>✓</span></button>);})}</div><div className="p-4 border-t border-gray-700 shrink-0"><div className="w-full h-2 rounded-full bg-gray-700 mb-3 overflow-hidden"><div className="h-full bg-green-500 transition-all" style={{width: `${handout.items.length > 0 ? (handoutCheckedCount / handout.items.length) * 100 : 0}%`}} /></div><button onClick={() => setHandout(null)} disabled={!handoutAllDone} className={`w-full py-3 rounded-xl font-bold transition-all ${handoutAllDone ? "bg-green-600 hover:bg-green-500" : "bg-gray-700 text-gray-500 cursor-not-allowed"}`}>{handoutAllDone ? "✅ Fertig – neue Bestellung" : "Erst alle abhaken"}</button></div></div></div>)}
     </div>
   );
 }
 
-function CupsTab({cupCounters,getSPName,cupTotals,setCupResetTarget,setShowCupResetConfirm}:any) {
-  return (<div><div className="flex justify-between items-center mb-4 flex-wrap gap-2"><h2 className="text-lg font-bold">Becher-Übersicht</h2>
-    <button onClick={()=>{setCupResetTarget("");setShowCupResetConfirm(true);}} className="px-3 py-2 rounded-xl bg-red-800 hover:bg-red-700 text-sm font-bold border border-red-500/30">🔄 Alle nullen</button></div>
-    <h3 className="text-md font-bold mb-2">Gesamt</h3>
-    <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-6">
-      <div className="bg-gray-800 rounded-xl p-3 border border-gray-700"><div className="text-xs text-gray-400">0,2L ausgegeben</div><div className="text-2xl font-bold tabular-nums">{cupTotals.given02}</div></div>
-      <div className="bg-gray-800 rounded-xl p-3 border border-gray-700"><div className="text-xs text-gray-400">0,2L zurück</div><div className="text-2xl font-bold tabular-nums text-green-400">{cupTotals.returned02}</div></div>
-      <div className="bg-gray-800 rounded-xl p-3 border border-gray-700"><div className="text-xs text-gray-400">0,2L Umlauf</div><div className="text-2xl font-bold tabular-nums text-amber-400">{Math.max(0, cupTotals.given02 - cupTotals.returned02)}</div></div>
-      <div className="bg-gray-800 rounded-xl p-3 border border-gray-700"><div className="text-xs text-gray-400">0,4L ausgegeben</div><div className="text-2xl font-bold tabular-nums">{cupTotals.given04}</div></div>
-      <div className="bg-gray-800 rounded-xl p-3 border border-gray-700"><div className="text-xs text-gray-400">0,4L zurück</div><div className="text-2xl font-bold tabular-nums text-green-400">{cupTotals.returned04}</div></div>
-    </div>
-    <h3 className="text-md font-bold mb-2">Pro Verkaufsstelle</h3>
-    {cupCounters.map((c:any)=>(<div key={c.salesPointId} className="bg-gray-800 rounded-xl p-4 border border-gray-700 mb-2">
-      <div className="flex justify-between items-center mb-3"><span className="font-bold text-base">{getSPName(c.salesPointId)}</span><button onClick={()=>{setCupResetTarget(String(c.salesPointId));setShowCupResetConfirm(true);}} className="px-3 py-1.5 rounded-lg bg-red-900/50 hover:bg-red-800/50 text-xs font-bold">🔄 nullen</button></div>
-      <div className="grid grid-cols-3 gap-3 text-center">
-        <div className="bg-gray-700/50 rounded-lg p-2"><div className="text-[10px] text-gray-400 uppercase font-bold">0,2L</div>
-          <div className="text-xs mt-1"><span className="text-gray-400">ausgegeben:</span> <strong className="tabular-nums">{c.given02}</strong></div>
-          <div className="text-xs"><span className="text-gray-400">zurück:</span> <strong className="tabular-nums text-green-400">{c.returned02}</strong></div>
-          <div className="text-xs border-t border-gray-600 pt-1 mt-1"><span className="text-gray-400">im Umlauf:</span> <strong className={`tabular-nums ${c.given02 - c.returned02 > 0 ? "text-amber-400" : "text-green-400"}`}>{Math.max(0, c.given02 - c.returned02)}</strong></div>
-        </div>
-        <div></div>
-        <div className="bg-gray-700/50 rounded-lg p-2"><div className="text-[10px] text-gray-400 uppercase font-bold">0,4L</div>
-          <div className="text-xs mt-1"><span className="text-gray-400">ausgegeben:</span> <strong className="tabular-nums">{c.given04}</strong></div>
-          <div className="text-xs"><span className="text-gray-400">zurück:</span> <strong className="tabular-nums text-green-400">{c.returned04}</strong></div>
-          <div className="text-xs border-t border-gray-600 pt-1 mt-1"><span className="text-gray-400">im Umlauf:</span> <strong className={`tabular-nums ${c.given04 - c.returned04 > 0 ? "text-amber-400" : "text-green-400"}`}>{Math.max(0, c.given04 - c.returned04)}</strong></div>
-        </div>
-      </div>
-    </div>))}
-  </div>);
-}
-
-function SimpleModal({title,error,value,onChange,onSubmit,onClose}:any){return(
-  <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4"><form onSubmit={onSubmit} className="bg-gray-800 rounded-2xl p-6 w-full max-w-sm shadow-2xl border border-gray-700">
-    <h2 className="text-xl font-bold mb-4">{title}</h2>{error&&<div className="bg-red-900/50 text-red-300 text-sm p-3 rounded-lg mb-4 border border-red-700">{error}</div>}
-    <div className="mb-4"><input type="text" value={value} onChange={(e)=>onChange(e.target.value)} className="w-full px-4 py-2.5 rounded-xl bg-gray-700 text-white border border-gray-600 focus:border-blue-500 focus:outline-none" autoFocus /></div>
-    <div className="flex gap-3"><button type="button" onClick={onClose} className="flex-1 py-3 rounded-xl font-bold bg-gray-600">Abbrechen</button><button type="submit" className="flex-1 py-3 rounded-xl font-bold bg-amber-600">Speichern</button></div>
-  </form></div>
-);}
-function ConfirmModal({title,children,onConfirm,onClose}:any){return(
-  <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4"><div className="bg-gray-800 rounded-2xl p-6 w-full max-w-sm shadow-2xl border border-gray-700">
-    <h2 className="text-xl font-bold mb-3 text-center text-red-400">{title}</h2>{children}
-    <div className="flex gap-3 mt-4"><button onClick={onClose} className="flex-1 py-3 rounded-xl font-bold bg-gray-600">Abbrechen</button><button onClick={onConfirm} className="flex-1 py-3 rounded-xl font-bold bg-red-600">Ja</button></div>
-  </div></div>
-);}
-
-function UsersTabSimple() {
-  const [users,setUsers]=useState<any[]>([]); const [showCreate,setShowCreate]=useState(false);const [nN,setNN]=useState("");const[nP,setNP]=useState("");const[nD,setND]=useState("30");const[cE,setCE]=useState("");
-  const [eU,setEU]=useState<any>(null);const[eD,setED]=useState("30");const[pU,setPU]=useState<any>(null);const[pV,setPV]=useState("");
-  const reload=useCallback(async()=>{try{const r=await fetch("/api/users");if(r.ok)setUsers(await r.json())}catch(err){console.error(err)}},[]);
-  useEffect(()=>{reload();},[reload]);
-  async function api(p:string,m:string,b?:any){const r=await fetch(p,{method:m,headers:{"Content-Type":"application/json"},body:b?JSON.stringify(b):undefined});if(!r.ok)throw new Error((await r.json()).error||"Fehler");return r.json();}
-  async function hC(e:React.FormEvent){e.preventDefault();setCE("");try{await api("/api/users","POST",{username:nN,password:nP,days:parseInt(nD)});setShowCreate(false);setNN("");setNP("");setND("30");reload();}catch(err:any){setCE(err.message||"Fehler");}}
-  async function hE(id:number){try{await api("/api/users","PATCH",{userId:id,action:"extend",value:parseInt(eD)});setEU(null);reload();}catch(err){console.error(err);}}
-  async function hP(id:number){try{await api("/api/users","PATCH",{userId:id,action:"resetPassword",value:pV});setPU(null);setPV("");}catch(err){console.error(err);}}
-  async function hD(id:number,n:string){if(!confirm(`"${n}" wirklich löschen?`))return;try{await api("/api/users","DELETE",{userId:id});reload();}catch(err){console.error(err);}}
-  async function tA(id:number){try{await api("/api/users","PATCH",{userId:id,action:"toggleActive"});reload();}catch(err){console.error(err);}}
-  const dl=(e:string)=>Math.ceil((new Date(e).getTime()-Date.now())/(24*60*60*1000));const opts=[{d:1,l:"1 Tag"},{d:2,l:"2 Tage"},{d:3,l:"3 Tage"},{d:4,l:"4 Tage"},{d:14,l:"14 Tage"},{d:30,l:"30 Tage"},{d:180,l:"180 Tage"},{d:365,l:"1 Jahr"}];
-  return(<div><div className="flex justify-between items-center mb-4"><h2 className="text-lg font-bold">Nutzer</h2><button onClick={()=>{setCE("");setShowCreate(true);}} className="px-4 py-2 rounded-xl bg-green-600 hover:bg-green-500 font-bold text-sm">+ Neuer</button></div>
-    {users.map((u:any)=>{const l=dl(u.expiresAt);const e=l<0;return(<div key={u.id} className="bg-gray-800 rounded-xl p-3 border border-gray-700 mb-2">
-      <div className="flex items-center gap-3"><div className="w-10 h-10 rounded-lg shrink-0 flex items-center justify-center font-bold text-white text-xs bg-purple-600">{u.username.charAt(0).toUpperCase()}</div>
-        <div className="flex-1 min-w-0"><div className="font-bold truncate">{u.username}{!u.isActive&&<span className="text-[10px] bg-gray-600 px-1.5 py-0.5 rounded text-white ml-1">DEAKT</span>}{e&&<span className="text-[10px] bg-red-700 px-1.5 py-0.5 rounded text-white ml-1">ABGEL.</span>}</div>
-          <div className="text-xs text-gray-400">bis {new Date(u.expiresAt).toLocaleDateString("de-DE")} · {e?<span className="text-red-400 font-bold">abgelaufen</span>:<span className={`font-bold ${l<=7?"text-amber-400":"text-green-400"}`}>{l} T</span>}</div></div>
-      </div>
-      <div className="flex gap-1.5 mt-2.5 flex-wrap"><button onClick={()=>setEU(u)} className="px-3 py-1.5 rounded-lg bg-green-700 hover:bg-green-600 text-xs font-bold">⏳ Verl.</button>
-        <button onClick={()=>setPU(u)} className="px-3 py-1.5 rounded-lg bg-gray-600 hover:bg-gray-500 text-xs font-bold">🔑 PW</button>
-        <button onClick={()=>tA(u.id)} className="px-3 py-1.5 rounded-lg bg-gray-600 hover:bg-gray-500 text-xs font-bold">{u.isActive?"⏸️":"▶️"}</button>
-        <button onClick={()=>hD(u.id,u.username)} className="px-3 py-1.5 rounded-lg bg-red-900/50 hover:bg-red-800/50 text-xs font-bold">🗑️</button></div>
-    </div>);})}
-    {showCreate&&<CreateUserModal error={cE} name={nN} password={nP} days={nD} onName={setNN} onPassword={setNP} onDays={setND} onSubmit={hC} onClose={()=>setShowCreate(false)} opts={opts}/>}
-    {eU&&<ExtendModal user={eU} days={eD} onDays={setED} onSubmit={()=>hE(eU.id)} onClose={()=>setEU(null)} opts={opts}/>}
-    {pU&&<PasswordModal user={pU} value={pV} onChange={setPV} onSubmit={()=>hP(pU.id)} onClose={()=>setPU(null)}/>}
-  </div>);
-}
-function CreateUserModal({error,name,password,days,onName,onPassword,onDays,onSubmit,onClose,opts}:any){return(
-  <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4"><form onSubmit={onSubmit} className="bg-gray-800 rounded-2xl p-6 w-full max-w-sm shadow-2xl border border-gray-700">
-    <h2 className="text-xl font-bold mb-4">Neuer Nutzer</h2>{error&&<div className="bg-red-900/50 text-red-300 text-sm p-3 rounded-lg mb-4 border border-red-700">{error}</div>}
-    <div className="mb-3"><label className="block text-sm text-gray-400 mb-1">Name</label><input type="text" value={name} onChange={(e)=>onName(e.target.value)} className="w-full px-4 py-2.5 rounded-xl bg-gray-700 text-white border border-gray-600 focus:border-blue-500 focus:outline-none" autoFocus/></div>
-    <div className="mb-3"><label className="block text-sm text-gray-400 mb-1">Passwort</label><input type="text" value={password} onChange={(e)=>onPassword(e.target.value)} className="w-full px-4 py-2.5 rounded-xl bg-gray-700 text-white border border-gray-600 focus:border-blue-500 focus:outline-none"/></div>
-    <div className="mb-4"><select value={days} onChange={(e)=>onDays(e.target.value)} className="w-full px-4 py-2.5 rounded-xl bg-gray-700 text-white border border-gray-600 focus:border-blue-500 focus:outline-none">{opts.map((o:any)=>(<option key={o.d} value={o.d}>{o.l}</option>))}</select></div>
-    <div className="flex gap-3"><button type="button" onClick={onClose} className="flex-1 py-3 rounded-xl font-bold bg-gray-600">Abbrechen</button><button type="submit" className="flex-1 py-3 rounded-xl font-bold bg-amber-600">Anlegen</button></div>
-  </form></div>
-);}
-function ExtendModal({user,days,onDays,onSubmit,onClose,opts}:any){return(
-  <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4"><form onSubmit={onSubmit} className="bg-gray-800 rounded-2xl p-6 w-full max-w-sm shadow-2xl border border-gray-700">
-    <h2 className="text-xl font-bold mb-2">⏳ Verlängern</h2><p className="text-sm text-gray-400 mb-4">{user?.username} · bis {new Date(user?.expiresAt).toLocaleDateString("de-DE")}</p>
-    <select value={days} onChange={(e)=>onDays(e.target.value)} className="w-full mb-4 px-4 py-2.5 rounded-xl bg-gray-700 text-white border border-gray-600 focus:border-blue-500 focus:outline-none">{opts.map((o:any)=>(<option key={o.d} value={o.d}>{o.l}</option>))}</select>
-    <div className="flex gap-3"><button type="button" onClick={onClose} className="flex-1 py-3 rounded-xl font-bold bg-gray-600">Abbrechen</button><button type="submit" className="flex-1 py-3 rounded-xl font-bold bg-green-600">Verlängern</button></div>
-  </form></div>
-);}
-function PasswordModal({user,value,onChange,onSubmit,onClose}:any){return(
-  <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4"><form onSubmit={onSubmit} className="bg-gray-800 rounded-2xl p-6 w-full max-w-sm shadow-2xl border border-gray-700">
-    <h2 className="text-xl font-bold mb-2">🔑 Passwort</h2><p className="text-sm text-gray-400 mb-4">für {user?.username}</p>
-    <div className="mb-4"><input type="text" value={value} onChange={(e)=>onChange(e.target.value)} className="w-full px-4 py-2.5 rounded-xl bg-gray-700 text-white border border-gray-600 focus:border-blue-500 focus:outline-none" autoFocus/></div>
-    <div className="flex gap-3"><button type="button" onClick={onClose} className="flex-1 py-3 rounded-xl font-bold bg-gray-600">Abbrechen</button><button type="submit" className="flex-1 py-3 rounded-xl font-bold bg-amber-600">Speichern</button></div>
-  </form></div>
-);}
-
-function PasswordChangeModal({isAdmin, targetUserId, targetUsername, onClose}: any) {
-  const [newPassword, setNewPassword] = useState("");
-  const [confirmPassword, setConfirmPassword] = useState("");
-  const [error, setError] = useState("");
-  const [success, setSuccess] = useState(false);
-
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    setError("");
-    setSuccess(false);
-
-    if (newPassword.length < 6) {
-      setError("Passwort muss mindestens 6 Zeichen haben");
-      return;
-    }
-    if (newPassword !== confirmPassword) {
-      setError("Passwörter stimmen nicht überein");
-      return;
-    }
-
-    try {
-      const res = await fetch("/api/auth/change-password", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ newPassword, userId: targetUserId }),
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        setError(data.error || "Fehler");
-        return;
-      }
-      setSuccess(true);
-      setTimeout(() => onClose(), 1500);
-    } catch {
-      setError("Verbindungsfehler");
-    }
-  }
-
-  return (
-    <form onSubmit={handleSubmit} className="bg-gray-800 rounded-2xl p-6 w-full max-w-sm shadow-2xl border border-gray-700">
-      <h2 className="text-xl font-bold mb-4">
-        {targetUsername ? `Passwort für ${targetUsername}` : "Passwort ändern"}
-      </h2>
-      {error && <div className="bg-red-900/50 text-red-300 text-sm p-3 rounded-lg mb-4 border border-red-700">{error}</div>}
-      {success && <div className="bg-green-900/50 text-green-300 text-sm p-3 rounded-lg mb-4 border border-green-700">✅ Passwort geändert</div>}
-      <div className="space-y-4">
-        <div>
-          <label className="block text-sm text-gray-400 mb-1">Neues Passwort</label>
-          <input type="password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} className="w-full px-4 py-2.5 rounded-xl bg-gray-700 text-white border border-gray-600 focus:border-blue-500 focus:outline-none" required minLength={6} autoFocus />
-        </div>
-        <div>
-          <label className="block text-sm text-gray-400 mb-1">Passwort bestätigen</label>
-          <input type="password" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} className="w-full px-4 py-2.5 rounded-xl bg-gray-700 text-white border border-gray-600 focus:border-blue-500 focus:outline-none" required minLength={6} />
-        </div>
-      </div>
-      <div className="flex gap-3 mt-6">
-        <button type="button" onClick={onClose} className="flex-1 py-3 rounded-xl font-bold bg-gray-600 hover:bg-gray-500">Abbrechen</button>
-        <button type="submit" className="flex-1 py-3 rounded-xl font-bold bg-green-600 hover:bg-green-500">Ändern</button>
-      </div>
-    </form>
-  );
+function CalculatorModal({ total, onClose }: { total: number; onClose: () => void }) {
+  const [given, setGiven] = useState(""); const gn = parseFloat(given.replace(",", ".")) || 0; const ch = gn - total;
+  return (<div className="bg-gray-800 rounded-2xl p-5 max-w-xs w-full shadow-2xl border border-gray-600"><h3 className="text-lg font-bold mb-3 text-center">🧮 Wechselgeld</h3><div className="text-center mb-3"><div className="text-xs text-gray-400">Zu zahlen</div><div className="text-2xl font-extrabold text-green-400 tabular-nums">{total.toFixed(2)} €</div></div><div className="mb-3"><label className="block text-xs text-gray-400 mb-1">Erhalten (€)</label><input type="number" value={given} onChange={(e) => setGiven(e.target.value)} className="w-full px-3 py-2 rounded-xl bg-gray-700 text-white text-lg font-bold text-center border border-gray-600 focus:border-blue-500 focus:outline-none tabular-nums" placeholder="0,00" autoFocus /></div><div className="grid grid-cols-4 gap-2 mb-3">{[5,10,20,50].map((a) => (<button key={a} onClick={() => setGiven(a.toFixed(2))} className="py-2 rounded-lg bg-gray-700 hover:bg-gray-600 text-sm font-bold">{a} €</button>))}</div>{gn > 0 && <div className="text-center mb-3 p-2 rounded-lg bg-gray-700/50"><div className="text-xs text-gray-400">Wechselgeld</div><div className={`text-2xl font-extrabold tabular-nums ${ch >= 0 ? "text-green-400" : "text-red-400"}`}>{ch >= 0 ? "" : "-"}{Math.abs(ch).toFixed(2)} €</div></div>}<button onClick={onClose} className="w-full py-2.5 rounded-xl font-bold bg-amber-600 hover:bg-amber-500">Schließen</button></div>);
 }
