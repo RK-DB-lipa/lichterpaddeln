@@ -144,4 +144,33 @@ export const eventFoods = pgTable("event_foods", {
   foodId: integer("food_id").notNull().references(() => foods.id),
 });
 
+// Food queue: pending food orders for the kitchen
+export const foodQueue = pgTable("food_queue", {
+  id: serial("id").primaryKey(),
+  tenantId: integer("tenant_id").notNull().default(0),
+  foodName: varchar("food_name", { length: 200 }).notNull(),
+  quantity: integer("quantity").notNull().default(0),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+// Food stats: total cooked food items
+export const foodStats = pgTable("food_stats", {
+  id: serial("id").primaryKey(),
+  tenantId: integer("tenant_id").notNull().default(0),
+  foodName: varchar("food_name", { length: 200 }).notNull(),
+  totalCooked: integer("total_cooked").notNull().default(0),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+// Food order items (individual food items within an order)
+export const orderFoodItems = pgTable("order_food_items", {
+  id: serial("id").primaryKey(),
+  orderId: integer("order_id").notNull().references(() => orders.id),
+  foodId: integer("food_id").notNull().references(() => foods.id),
+  foodName: varchar("food_name", { length: 200 }).notNull(),
+  quantity: integer("quantity").notNull(),
+  unitPriceGross: real("unit_price_gross").notNull(),
+  totalPriceGross: real("total_price_gross").notNull(),
+});
+
 export type DrinkSummary = { drinkId: number; drinkName: string; totalQuantity: number; totalGross: number; totalDeposit: number; };
