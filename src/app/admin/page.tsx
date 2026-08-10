@@ -362,7 +362,6 @@ export default function AdminPage() {
                 {orderFilter && <button onClick={()=>{setResetTarget(orderFilter);setShowResetConfirm(true);}} className="px-3 py-2 rounded-xl bg-red-700 hover:bg-red-600 text-sm font-bold border border-red-500/30">🔄 {getSPName(parseInt(orderFilter))} reset</button>}
                 <button onClick={()=>{setResetTarget("");setShowResetConfirm(true);}} className="px-3 py-2 rounded-xl bg-red-800 hover:bg-red-700 text-sm font-bold border border-red-500/30">🔄 Alle reset</button>
               </div>
-            </div>
 
             {totals && (
               <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
