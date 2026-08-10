@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
-import { orders, orderItems, drinks, cupCounters, salesPoints } from "@/db/schema";
+import { orders, orderItems, orderFoodItems, drinks, foods, cupCounters, salesPoints } from "@/db/schema";
 import { getSession } from "@/lib/auth";
 import { eq, sql, desc, and, gte, lte } from "drizzle-orm";
 
@@ -31,49 +31,74 @@ export async function POST(req: NextRequest) {
     const displayName = session.displayName || "";
 
     const body = await req.json();
-    const { items, depositReturned, salesPointId, cashierName } = body;
+    const { items, foodItems, depositReturned, salesPointId, cashierName } = body;
 
     if (!salesPointId) {
       return NextResponse.json({ error: "Verkaufsstelle ist erforderlich" }, { status: 400 });
     }
-    if (!items || !Array.isArray(items) || items.length === 0) {
-      return NextResponse.json({ error: "Mindestens ein Getränk erforderlich" }, { status: 400 });
+    if ((!items || items.length === 0) && (!foodItems || foodItems.length === 0)) {
+      return NextResponse.json({ error: "Mindestens ein Getränk oder Speise erforderlich" }, { status: 400 });
     }
-
-    const allDrinks = await db
-      .select()
-      .from(drinks)
-      .where(eq(drinks.tenantId, tenantId));
-    const drinkMap = new Map(allDrinks.map((d) => [d.id, d]));
 
     let totalGross = 0;
     let totalDeposit = 0;
     const orderItemData: (typeof orderItems.$inferInsert)[] = [];
+    const orderFoodItemData: (typeof orderFoodItems.$inferInsert)[] = [];
 
-    for (const item of items) {
-      const drink = drinkMap.get(item.drinkId);
-      if (!drink || !drink.isActive) {
-        return NextResponse.json({ error: `Getränk mit ID ${item.drinkId} nicht gefunden` }, { status: 400 });
+    // Getränke verarbeiten
+    if (items && items.length > 0) {
+      const allDrinks = await db.select().from(drinks).where(eq(drinks.tenantId, tenantId));
+      const drinkMap = new Map(allDrinks.map((d) => [d.id, d]));
+
+      for (const item of items) {
+        const drink = drinkMap.get(item.drinkId);
+        if (!drink || !drink.isActive) {
+          return NextResponse.json({ error: `Getränk mit ID ${item.drinkId} nicht gefunden` }, { status: 400 });
+        }
+        const priceGross = drink.priceGross;
+        const depositPerUnit = drink.hasDeposit ? drink.depositAmount : 0;
+        const itemTotalGross = +(priceGross * item.quantity).toFixed(2);
+        const itemTotalDeposit = +(depositPerUnit * item.quantity).toFixed(2);
+        totalGross += itemTotalGross;
+        totalDeposit += itemTotalDeposit;
+        orderItemData.push({
+          orderId: 0,
+          drinkId: drink.id,
+          drinkName: drink.name,
+          quantity: item.quantity,
+          unitPriceGross: priceGross,
+          unitDeposit: depositPerUnit,
+          totalPriceGross: itemTotalGross,
+          totalDeposit: itemTotalDeposit,
+        });
+
+        if (drink.hasDeposit) {
+          await db.execute(bumpCup(tenantId, salesPointId, drink.cupSize ?? "04", item.quantity));
+        }
       }
-      const priceGross = drink.priceGross;
-      const depositPerUnit = drink.hasDeposit ? drink.depositAmount : 0;
-      const itemTotalGross = +(priceGross * item.quantity).toFixed(2);
-      const itemTotalDeposit = +(depositPerUnit * item.quantity).toFixed(2);
-      totalGross += itemTotalGross;
-      totalDeposit += itemTotalDeposit;
-      orderItemData.push({
-        orderId: 0,
-        drinkId: drink.id,
-        drinkName: drink.name,
-        quantity: item.quantity,
-        unitPriceGross: priceGross,
-        unitDeposit: depositPerUnit,
-        totalPriceGross: itemTotalGross,
-        totalDeposit: itemTotalDeposit,
-      });
+    }
 
-      if (drink.hasDeposit) {
-        await db.execute(bumpCup(tenantId, salesPointId, drink.cupSize ?? "04", item.quantity));
+    // Speisen verarbeiten
+    if (foodItems && foodItems.length > 0) {
+      const allFoods = await db.select().from(foods).where(eq(foods.tenantId, tenantId));
+      const foodMap = new Map(allFoods.map((f) => [f.id, f]));
+
+      for (const item of foodItems) {
+        const food = foodMap.get(item.foodId);
+        if (!food || !food.isActive) {
+          return NextResponse.json({ error: `Speise mit ID ${item.foodId} nicht gefunden` }, { status: 400 });
+        }
+        const priceGross = food.priceGross;
+        const itemTotalGross = +(priceGross * item.quantity).toFixed(2);
+        totalGross += itemTotalGross;
+        orderFoodItemData.push({
+          orderId: 0,
+          foodId: food.id,
+          foodName: food.name,
+          quantity: item.quantity,
+          unitPriceGross: priceGross,
+          totalPriceGross: itemTotalGross,
+        });
       }
     }
 
@@ -94,7 +119,14 @@ export async function POST(req: NextRequest) {
       .returning();
 
     const itemsWithOrderId = orderItemData.map((item) => ({ ...item, orderId: order.id }));
-    await db.insert(orderItems).values(itemsWithOrderId);
+    if (itemsWithOrderId.length > 0) {
+      await db.insert(orderItems).values(itemsWithOrderId);
+    }
+
+    const foodItemsWithOrderId = orderFoodItemData.map((item) => ({ ...item, orderId: order.id }));
+    if (foodItemsWithOrderId.length > 0) {
+      await db.insert(orderFoodItems).values(foodItemsWithOrderId);
+    }
 
     return NextResponse.json(
       {
@@ -105,6 +137,7 @@ export async function POST(req: NextRequest) {
         netDeposit: order.netDeposit,
         cashierName: order.cashierName,
         items: itemsWithOrderId,
+        foodItems: foodItemsWithOrderId,
       },
       { status: 201 }
     );
