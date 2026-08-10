@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
 import { events, eventDrinks, eventFoods } from "@/db/schema";
 import { getSession } from "@/lib/auth";
-import { eq, and, gte, lte, or } from "drizzle-orm";
+import { eq, and, gte, lte, or, sql } from "drizzle-orm";
 
 // GET: Events für den aktuellen Tenant
 export async function GET(req: NextRequest) {
