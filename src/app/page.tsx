@@ -174,7 +174,7 @@ export default function POSPage() {
   }
 
   return (
-    <div className="h-screen flex flex-col bg-gray-900 text-white overflow-hidden">
+    <div className="h-screen flex flex-col bg-gray-900 text-white overflow-hidden logo-watermark">
       <header className="flex items-center justify-between px-3 py-1.5 bg-gray-800 border-b border-gray-700 shrink-0 z-20">
         <div className="flex items-center gap-2 min-w-0">
           <img src="/images/turbotap-logo.png" alt="" className="w-6 h-6 rounded" />
