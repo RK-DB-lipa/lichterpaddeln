@@ -42,19 +42,23 @@ export async function POST(req: NextRequest) {
     const body = await req.json();
     const { group, action } = body;
 
+    console.log("[Groups API] Sort request:", { tenantId, group, action });
+
     if (!group || !action) {
       return NextResponse.json({ error: "group und action erforderlich" }, { status: 400 });
     }
 
     // Alle Getränke dieser Gruppe für diesen Tenant
     const groupDrinks = await db
-      .select({ id: drinks.id, sortOrder: drinks.sortOrder })
+      .select({ id: drinks.id, sortOrder: drinks.sortOrder, group: drinks.group })
       .from(drinks)
       .where(and(eq(drinks.tenantId, tenantId), eq(drinks.group, group), eq(drinks.isActive, true)))
       .orderBy(drinks.sortOrder);
 
+    console.log("[Groups API] Found group drinks:", groupDrinks.length);
+
     if (groupDrinks.length === 0) {
-      return NextResponse.json({ error: "Gruppe nicht gefunden" }, { status: 404 });
+      return NextResponse.json({ error: "Gruppe nicht gefunden", group, tenantId }, { status: 404 });
     }
 
     // Aktuelle Position der Gruppe (basierend auf erstem Getränk)
@@ -91,22 +95,28 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ success: true, message: "Keine Änderung" });
     }
 
-    // Neue Gruppen-Reihenfolge erstellen und hoffen
+    // Neue Gruppen-Reihenfolge erstellen
     const newOrder = [...uniqueGroups];
     const [moved] = newOrder.splice(currentIndex, 1);
     newOrder.splice(targetIndex, 0, moved);
 
     // SortOrder für alle Getränke aktualisieren
+    console.log("[Groups API] New order:", newOrder);
     let sortCounter = 0;
+    const updates: any[] = [];
     for (const groupName of newOrder) {
       const drinksInGroup = allDrinks.filter(d => d.group === groupName);
+      console.log(`[Groups API] Group "${groupName}": ${drinksInGroup.length} drinks`);
       for (const drink of drinksInGroup) {
-        await db.update(drinks).set({ sortOrder: sortCounter }).where(eq(drinks.id, drink.id));
+        console.log(`[Groups API] Updating drink ${drink.id} to sortOrder ${sortCounter}`);
+        const result = await db.update(drinks).set({ sortOrder: sortCounter }).where(eq(drinks.id, drink.id)).returning();
+        updates.push({ drinkId: drink.id, newSortOrder: sortCounter, success: result.length > 0 });
         sortCounter++;
       }
     }
 
-    return NextResponse.json({ success: true, newOrder });
+    console.log("[Groups API] Updates completed:", updates.length);
+    return NextResponse.json({ success: true, newOrder, updates });
   } catch (error) {
     console.error("POST /api/groups/sort error:", error);
     return NextResponse.json({ error: "Interner Serverfehler" }, { status: 500 });
