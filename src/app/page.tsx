@@ -3,6 +3,8 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 
 type Drink = { id: number; name: string; priceGross: number; taxRate: number; hasDeposit: boolean; depositAmount: number; cupSize: string; color: string; imageUrl: string | null; isPourDrink: boolean; salesPointIds?: number[]; group?: string | null; };
+type Food = { id: number; name: string; priceGross: number; taxRate: number; color: string; imageUrl: string | null; isCookItem: boolean; group?: string | null; };
+type Event = { id: number; name: string; startDate: string; endDate: string; isActive: boolean; drinkCount: number; foodCount: number; };
 type SalesPoint = { id: number; name: string; };
 type OrderItem = { drinkId: number; drinkName: string; quantity: number; unitPriceGross: number; unitDeposit: number; };
 type HandoutState = { orderId: number; salesPointName: string; items: Array<OrderItem & { isPourDrink: boolean }>; checked: Record<number, boolean>; totalGross: number; depositReturnedCount: number; };
@@ -16,6 +18,9 @@ export default function POSPage() {
   const [loginDisplayName, setLoginDisplayName] = useState("");
   const [loginError, setLoginError] = useState("");
   const [drinks, setDrinks] = useState<Drink[]>([]);
+  const [foods, setFoods] = useState<Food[]>([]);
+  const [events, setEvents] = useState<Event[]>([]);
+  const [selectedEventId, setSelectedEventId] = useState<number | null>(null);
   const [salesPoints, setSalesPoints] = useState<SalesPoint[]>([]);
   const [selectedSalesPointId, setSelectedSalesPointId] = useState<number | null>(null);
   const [orderItems, setOrderItems] = useState<Map<number, OrderItem>>(new Map());
@@ -53,20 +58,48 @@ export default function POSPage() {
   useEffect(() => { if (selectedSalesPointId !== null) localStorage.setItem("selectedSalesPointId", selectedSalesPointId.toString()); }, [selectedSalesPointId]);
   useEffect(() => {
     if (!session?.authenticated) return;
-    fetch("/api/admin/setup", { method: "POST" }).then(() => { fetchDrinks().then(() => fetchSalesPoints()); });
+    fetch("/api/admin/setup", { method: "POST" }).then(() => { 
+      fetchEvents();
+      fetchFoods();
+      fetchDrinks().then(() => fetchSalesPoints()); 
+    });
   }, [session?.authenticated]);
 
   async function fetchDrinks() {
     try {
-      const url = selectedSalesPointId ? `/api/drinks?salesPointId=${selectedSalesPointId}` : "/api/drinks";
+      let url = "/api/drinks";
+      const params = new URLSearchParams();
+      if (selectedSalesPointId) params.set("salesPointId", selectedSalesPointId.toString());
+      if (selectedEventId) params.set("eventId", selectedEventId.toString());
+      if (params.toString()) url += "?" + params.toString();
       const r = await fetch(url); if (r.ok) setDrinks(await r.json());
+    } catch (err) { console.error(err); }
+  }
+  async function fetchFoods() {
+    try {
+      let url = "/api/foods";
+      if (selectedEventId) url += "?eventId=" + selectedEventId;
+      const r = await fetch(url); if (r.ok) setFoods(await r.json());
+    } catch (err) { console.error(err); }
+  }
+  async function fetchEvents() {
+    try {
+      const r = await fetch("/api/events?active=true&date=" + new Date().toISOString().split("T")[0]);
+      if (r.ok) {
+        const evts = await r.json();
+        setEvents(evts);
+        // Auto-select first active event
+        if (evts.length > 0 && selectedEventId === null) {
+          setSelectedEventId(evts[0].id);
+        }
+      }
     } catch (err) { console.error(err); }
   }
   async function fetchSalesPoints() {
     try { const r = await fetch("/api/sales-points"); if (r.ok) { const d = await r.json(); setSalesPoints(d); if (d.length > 0 && selectedSalesPointId === null) setSelectedSalesPointId(d[0].id); } } catch (err) { console.error(err); }
   }
 
-  useEffect(() => { if (session?.authenticated && selectedSalesPointId) fetchDrinks(); }, [session?.authenticated, selectedSalesPointId]);
+  useEffect(() => { if (session?.authenticated && selectedSalesPointId) { fetchDrinks(); fetchFoods(); } }, [session?.authenticated, selectedSalesPointId, selectedEventId]);
 
   const addDrink = useCallback((drink: Drink) => {
     if (removeMode) { setRemoveMode(false); setOrderItems((prev) => { const n = new Map(prev); const ex = n.get(drink.id); if (!ex) return n; if (ex.quantity <= 1) n.delete(drink.id); else n.set(drink.id, { ...ex, quantity: ex.quantity - 1 }); return n; }); return; }
@@ -201,9 +234,16 @@ export default function POSPage() {
           <img src="/images/turbotap-logo.png" alt="" className="w-6 h-6 rounded" />
           <span className="font-bold text-sm md:text-base truncate">TurboTap · {selectedSalesPoint?.name || "Getränkewagen"}</span>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           <span className="text-[10px] bg-gray-700 rounded px-1.5 py-0.5 text-gray-300 hidden sm:inline">👤 {session.displayName || session.username}</span>
+          {events.length > 0 && (
+            <select value={selectedEventId ?? ""} onChange={(e) => setSelectedEventId(e.target.value ? parseInt(e.target.value) : null)} className="bg-purple-700 text-white text-xs md:text-sm rounded-lg px-2 py-1 border border-purple-500 focus:border-blue-500 focus:outline-none" title="Event auswählen">
+              <option value="">Alle Artikel</option>
+              {events.map((ev) => (<option key={ev.id} value={ev.id}>{ev.name}</option>))}
+            </select>
+          )}
           <a href="/zapf" className="text-xs bg-gray-700 hover:bg-gray-600 rounded-lg px-2 py-1 border border-gray-600 font-bold transition-colors">🍺 Zapf</a>
+          {foods.some(f => f.isCookItem) && <a href="/koch" className="text-xs bg-orange-700 hover:bg-orange-600 rounded-lg px-2 py-1 border border-orange-500 font-bold transition-colors">🍳 Koch</a>}
           <select value={selectedSalesPointId ?? ""} onChange={(e) => setSelectedSalesPointId(parseInt(e.target.value))} className="bg-gray-700 text-white text-xs md:text-sm rounded-lg px-2 py-1 border border-gray-600 focus:border-blue-500 focus:outline-none">
             {salesPoints.map((sp) => (<option key={sp.id} value={sp.id}>{sp.name}</option>))}
           </select>
