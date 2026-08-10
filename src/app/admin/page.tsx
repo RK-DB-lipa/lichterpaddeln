@@ -39,6 +39,13 @@ export default function AdminPage() {
   // Superadmin
   const [tenants, setTenants] = useState<TenantInfo[]>([]);
   const [showUsersTab, setShowUsersTab] = useState(false);
+  
+  // Passwort & Username ändern
+  const [showPasswordModal, setShowPasswordModal] = useState(false);
+  const [passwordTargetUser, setPasswordTargetUser] = useState<any>(null);
+  const [showUsernameModal, setShowUsernameModal] = useState(false);
+  const [usernameTargetUser, setUsernameTargetUser] = useState<any>(null);
+  const [newUsername, setNewUsername] = useState("");
 
   const isSuperAdmin = session?.role === "admin" && session?.username === "admin";
 
@@ -119,6 +126,20 @@ export default function AdminPage() {
     try { await api("/api/sales-points/sort", "POST", { salesPointId: spId, action }); fetchSalesPoints(); }
     catch (err: any) { alert(err.message || "Fehler beim Verschieben"); }
   }
+
+  async function handleChangeUsername() {
+    if (!usernameTargetUser || !newUsername.trim()) return;
+    try {
+      await api(`/api/users/${usernameTargetUser.id}/username`, "PUT", { username: newUsername.trim() });
+      setShowUsernameModal(false);
+      setUsernameTargetUser(null);
+      setNewUsername("");
+      fetchTenants();
+      alert("Username erfolgreich geändert");
+    } catch (err: any) {
+      alert(err.message || "Fehler beim Ändern des Usernames");
+    }
+  }
   async function handleSaveSP(e: React.FormEvent) { e.preventDefault(); setSpFormError(""); if (!spFormName.trim()) { setSpFormError("Name erforderlich"); return; } try { await api("/api/sales-points", "POST", { name: spFormName.trim() }); setShowSalesPointForm(false); setSpFormName(""); fetchSalesPoints(); } catch (err: any) { setSpFormError(err.message); } }
   async function handleUpdateSP(e: React.FormEvent) { e.preventDefault(); if (!editingSalesPoint || !spEditName.trim()) return; try { await api(`/api/sales-points/${editingSalesPoint.id}`, "PUT", { name: spEditName.trim() }); setEditingSalesPoint(null); setSpEditName(""); fetchSalesPoints(); } catch (err) { console.error(err); } }
   async function handleDeleteSP(id: number) { if (!confirm("Verkaufsstelle deaktivieren?")) return; try { await api(`/api/sales-points/${id}`, "DELETE"); fetchSalesPoints(); } catch (err) { console.error(err); } }
@@ -160,7 +181,7 @@ export default function AdminPage() {
   }
 
   return (
-    <div className="h-screen bg-gray-900 text-white flex flex-col overflow-hidden">
+    <div className="h-screen bg-gray-900 text-white flex flex-col overflow-hidden logo-watermark">
       <header className="bg-gray-800 border-b border-gray-700 px-4 py-3 flex items-center justify-between shrink-0">
         <div className="flex items-center gap-3 min-w-0">
           <img src="/images/turbotap-logo.png" alt="" className="w-8 h-8 rounded-lg shrink-0" />
@@ -323,14 +344,37 @@ export default function AdminPage() {
             <p className="text-xs text-gray-400 mb-4">Klicke auf einen Mandanten, um in dessen Umgebung zu wechseln und Einstellungen zu bearbeiten.</p>
             <div className="space-y-2">
               {tenants.map((t) => (
-                <div key={t.userId} className="bg-gray-800 rounded-xl p-4 border border-gray-700 hover:border-amber-500 transition-all cursor-pointer" onClick={() => switchToTenant(t.userId)}>
-                  <div className="flex items-center justify-between">
+                <div key={t.userId} className="bg-gray-800 rounded-xl p-4 border border-gray-700">
+                  <div className="flex items-center justify-between mb-3 cursor-pointer" onClick={() => switchToTenant(t.userId)}>
                     <div><div className="font-bold text-base">{t.username}</div>
                       <div className="text-xs text-gray-400">{t.isActive ? "✅ Aktiv" : "⏸️ Deaktiviert"} · Lizenz bis {new Date(t.expiresAt).toLocaleDateString("de-DE")}</div></div>
                     <div className="text-right text-xs">
                       <div className="tabular-nums">{t.drinks} 🍺 · {t.orders} 📋 · {t.pours} 🍻</div>
                       <div className="text-amber-400 text-[10px] mt-1">👉 Klicken zum Bearbeiten</div>
                     </div>
+                  </div>
+                  <div className="flex gap-2 pt-2 border-t border-gray-700">
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setUsernameTargetUser(t);
+                        setNewUsername(t.username);
+                        setShowUsernameModal(true);
+                      }}
+                      className="flex-1 px-3 py-1.5 rounded-lg bg-blue-700 hover:bg-blue-600 text-xs font-bold"
+                    >
+                      ✏️ Username
+                    </button>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setPasswordTargetUser(t);
+                        setShowPasswordModal(true);
+                      }}
+                      className="flex-1 px-3 py-1.5 rounded-lg bg-green-700 hover:bg-green-600 text-xs font-bold"
+                    >
+                      🔑 Passwort
+                    </button>
                   </div>
                 </div>
               ))}
@@ -373,6 +417,58 @@ export default function AdminPage() {
             </div>
             <div className="p-4 border-t border-gray-700 shrink-0"><button onClick={()=>setOrderDetail(null)} className="w-full py-3 rounded-xl font-bold bg-amber-600 hover:bg-amber-500 transition-all">Schließen</button></div>
           </div>
+        </div>
+      )}
+
+      {/* Username ändern Modal */}
+      {showUsernameModal && usernameTargetUser && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
+          <div className="bg-gray-800 rounded-2xl p-6 w-full max-w-sm shadow-2xl border border-gray-700">
+            <h2 className="text-xl font-bold mb-4">Username ändern</h2>
+            <div className="mb-4">
+              <label className="block text-sm text-gray-400 mb-1">Neuer Username</label>
+              <input
+                type="text"
+                value={newUsername}
+                onChange={(e) => setNewUsername(e.target.value)}
+                className="w-full px-4 py-2.5 rounded-xl bg-gray-700 text-white border border-gray-600 focus:border-blue-500 focus:outline-none"
+                autoFocus
+              />
+            </div>
+            <div className="flex gap-3">
+              <button
+                onClick={() => {
+                  setShowUsernameModal(false);
+                  setUsernameTargetUser(null);
+                  setNewUsername("");
+                }}
+                className="flex-1 py-3 rounded-xl font-bold bg-gray-600 hover:bg-gray-500 transition-all"
+              >
+                Abbrechen
+              </button>
+              <button
+                onClick={handleChangeUsername}
+                className="flex-1 py-3 rounded-xl font-bold bg-blue-600 hover:bg-blue-500 transition-all"
+              >
+                Ändern
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Passwort ändern Modal */}
+      {showPasswordModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
+          <PasswordChangeModal
+            isAdmin={true}
+            targetUserId={passwordTargetUser?.userId}
+            targetUsername={passwordTargetUser?.username}
+            onClose={() => {
+              setShowPasswordModal(false);
+              setPasswordTargetUser(null);
+            }}
+          />
         </div>
       )}
     </div>
@@ -539,3 +635,66 @@ function PasswordModal({user,value,onChange,onSubmit,onClose}:any){return(
     <div className="flex gap-3"><button type="button" onClick={onClose} className="flex-1 py-3 rounded-xl font-bold bg-gray-600">Abbrechen</button><button type="submit" className="flex-1 py-3 rounded-xl font-bold bg-amber-600">Speichern</button></div>
   </form></div>
 );}
+
+function PasswordChangeModal({isAdmin, targetUserId, targetUsername, onClose}: any) {
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [error, setError] = useState("");
+  const [success, setSuccess] = useState(false);
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    setError("");
+    setSuccess(false);
+
+    if (newPassword.length < 6) {
+      setError("Passwort muss mindestens 6 Zeichen haben");
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      setError("Passwörter stimmen nicht überein");
+      return;
+    }
+
+    try {
+      const res = await fetch("/api/auth/change-password", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ newPassword, userId: targetUserId }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setError(data.error || "Fehler");
+        return;
+      }
+      setSuccess(true);
+      setTimeout(() => onClose(), 1500);
+    } catch {
+      setError("Verbindungsfehler");
+    }
+  }
+
+  return (
+    <form onSubmit={handleSubmit} className="bg-gray-800 rounded-2xl p-6 w-full max-w-sm shadow-2xl border border-gray-700">
+      <h2 className="text-xl font-bold mb-4">
+        {targetUsername ? `Passwort für ${targetUsername}` : "Passwort ändern"}
+      </h2>
+      {error && <div className="bg-red-900/50 text-red-300 text-sm p-3 rounded-lg mb-4 border border-red-700">{error}</div>}
+      {success && <div className="bg-green-900/50 text-green-300 text-sm p-3 rounded-lg mb-4 border border-green-700">✅ Passwort geändert</div>}
+      <div className="space-y-4">
+        <div>
+          <label className="block text-sm text-gray-400 mb-1">Neues Passwort</label>
+          <input type="password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} className="w-full px-4 py-2.5 rounded-xl bg-gray-700 text-white border border-gray-600 focus:border-blue-500 focus:outline-none" required minLength={6} autoFocus />
+        </div>
+        <div>
+          <label className="block text-sm text-gray-400 mb-1">Passwort bestätigen</label>
+          <input type="password" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} className="w-full px-4 py-2.5 rounded-xl bg-gray-700 text-white border border-gray-600 focus:border-blue-500 focus:outline-none" required minLength={6} />
+        </div>
+      </div>
+      <div className="flex gap-3 mt-6">
+        <button type="button" onClick={onClose} className="flex-1 py-3 rounded-xl font-bold bg-gray-600 hover:bg-gray-500">Abbrechen</button>
+        <button type="submit" className="flex-1 py-3 rounded-xl font-bold bg-green-600 hover:bg-green-500">Ändern</button>
+      </div>
+    </form>
+  );
+}
