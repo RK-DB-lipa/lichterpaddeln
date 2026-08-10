@@ -94,9 +94,26 @@ export async function POST() {
         drinkCount++;
       } catch (err: any) {
         const errorMsg = err?.message || String(err) || 'Unbekannter Fehler';
-        const errorDetail = `Getränk "${drink.name}" (ID: ${drink.id}): ${errorMsg}`;
-        drinkErrors.push(errorDetail);
-        console.error(`[Force-Sync] Fehler beim Kopieren von "${drink.name}":`, err);
+        const errorCode = err?.code || 'Kein Code';
+        const errorDetail = err?.detail || 'Kein Detail';
+        const errorHint = err?.hint || 'Kein Hint';
+        const errorConstraint = err?.constraint || 'Kein Constraint';
+        
+        const fullError = `Getränk "${drink.name}" (ID: ${drink.id}):\n` +
+          `  Fehler: ${errorMsg}\n` +
+          `  Code: ${errorCode}\n` +
+          `  Detail: ${errorDetail}\n` +
+          `  Hint: ${errorHint}\n` +
+          `  Constraint: ${errorConstraint}`;
+        
+        drinkErrors.push(fullError);
+        console.error(`[Force-Sync] Fehler beim Kopieren von "${drink.name}":`);
+        console.error('  Message:', errorMsg);
+        console.error('  Code:', errorCode);
+        console.error('  Detail:', errorDetail);
+        console.error('  Hint:', errorHint);
+        console.error('  Constraint:', errorConstraint);
+        console.error('  Full error:', err);
       }
     }
     
