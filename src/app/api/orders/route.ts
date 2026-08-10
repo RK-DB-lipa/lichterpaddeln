@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
-import { orders, orderItems, orderFoodItems, drinks, foods, cupCounters, salesPoints } from "@/db/schema";
+import { orders, orderItems, orderFoodItems, drinks, foods, cupCounters, salesPoints, foodQueue } from "@/db/schema";
 import { getSession } from "@/lib/auth";
 import { eq, sql, desc, and, gte, lte } from "drizzle-orm";
 
@@ -128,7 +128,6 @@ export async function POST(req: NextRequest) {
       await db.insert(orderFoodItems).values(foodItemsWithOrderId);
       
       // Speisen an die Küche senden (food_queue)
-      const { foodQueue } = await import("@/db/schema");
       for (const foodItem of foodItemsWithOrderId) {
         const existing = await db
           .select()
