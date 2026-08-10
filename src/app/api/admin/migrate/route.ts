@@ -30,10 +30,13 @@ const STATEMENTS = [
   `ALTER TABLE drinks ADD COLUMN IF NOT EXISTS group_name varchar(100)`,
   `ALTER TABLE managed_users ALTER COLUMN expires_at DROP NOT NULL`,
 
+  // Bruttopreis hinzufügen und berechnen
   `ALTER TABLE drinks ADD COLUMN IF NOT EXISTS price_gross real`,
-  `UPDATE drinks SET price_gross = price_net * (1 + tax_rate / 100) WHERE price_gross IS NULL`,
+  `UPDATE drinks SET price_gross = price_net * (1 + tax_rate / 100) WHERE price_gross IS NULL AND price_net IS NOT NULL`,
   `ALTER TABLE drinks ALTER COLUMN price_gross SET NOT NULL`,
   `ALTER TABLE drinks ALTER COLUMN price_gross SET DEFAULT 0`,
+  // Alten Nettopreis entfernen (war NOT NULL, jetzt nicht mehr benötigt)
+  `ALTER TABLE drinks ALTER COLUMN price_net DROP NOT NULL`,
 
   // --- NEU: Getränke-Verkaufsstellen Zuordnung ---
   `CREATE TABLE IF NOT EXISTS drink_sales_points (
