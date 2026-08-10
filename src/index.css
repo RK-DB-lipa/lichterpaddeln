@@ -1,0 +1,88 @@
+@import "tailwindcss";
+
+/* Ensure full height for POS layout */
+html,
+body {
+  height: 100%;
+  overflow: hidden;
+}
+
+/* Smooth tap on mobile */
+button {
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 4px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #4b5563;
+  border-radius: 999px;
+}
+
+/* Tabular numbers for prices */
+.tabular-nums {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Logo watermark background */
+.logo-watermark {
+  position: relative;
+  overflow: hidden;
+}
+
+.logo-watermark::before {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 300px;
+  height: 300px;
+  background-image: url('/images/turbotap-logo.png');
+  background-size: contain;
+  background-repeat: no-repeat;
+  background-position: center;
+  opacity: 0.08;
+  pointer-events: none;
+  z-index: 0;
+}
+
+.logo-watermark > * {
+  position: relative;
+  z-index: 1;
+}
+/* Logo watermark background */
+.logo-watermark {
+  position: relative;
+  overflow: hidden;
+}
+
+.logo-watermark::before {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 300px;
+  height: 300px;
+  background-image: url('/images/turbotap-logo.png');
+  background-size: contain;
+  background-repeat: no-repeat;
+  background-position: center;
+  opacity: 0.08;
+  pointer-events: none;
+  z-index: 0;
+}
+
+.logo-watermark > * {
+  position: relative;
+  z-index: 1;
+}
