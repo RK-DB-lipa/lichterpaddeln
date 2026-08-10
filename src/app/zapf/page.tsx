@@ -66,13 +66,32 @@ export default function ZapfPage() {
     } catch { setButtonList(["Bier", "Radler"]); }
   }
 
-  // Wake Lock für Zapf-Ansicht
+  // Wake Lock für Zapf-Ansicht - Display bleibt aktiv
   useEffect(() => {
-    async function rwl() { try { if ("wakeLock" in navigator) { (navigator as any).wakeLock.request("screen"); } } catch {} }
-    rwl();
-    const hv = () => { if (document.visibilityState === "visible") rwl(); };
-    document.addEventListener("visibilitychange", hv);
-    return () => document.removeEventListener("visibilitychange", hv);
+    let wakeLockSentinel: any = null;
+    async function requestWakeLock() {
+      try {
+        if ("wakeLock" in navigator) {
+          wakeLockSentinel = await (navigator as any).wakeLock.request("screen");
+          console.log("Wake Lock aktiviert");
+          wakeLockSentinel.addEventListener("release", () => {
+            console.log("Wake Lock freigegeben - erneute Anfrage");
+            if (document.visibilityState === "visible") requestWakeLock();
+          });
+        }
+      } catch (err) {
+        console.log("Wake Lock nicht verfügbar:", err);
+      }
+    }
+    requestWakeLock();
+    const handleVisibility = () => {
+      if (document.visibilityState === "visible") requestWakeLock();
+    };
+    document.addEventListener("visibilitychange", handleVisibility);
+    return () => {
+      document.removeEventListener("visibilitychange", handleVisibility);
+      if (wakeLockSentinel) wakeLockSentinel.release().catch(() => {});
+    };
   }, [session?.authenticated]);
   async function fetchQueue() { if (!selectedSalesPointId) return; try { const r = await fetch(`/api/pour/queue?salesPointId=${selectedSalesPointId}`); if (r.ok) setRawQueue(await r.json()); } catch (err) { console.error(err); } }
   async function fetchStats() { if (!selectedSalesPointId) return; try { const r = await fetch(`/api/pour/stats?salesPointId=${selectedSalesPointId}`); if (r.ok) { const d: StatItem[] = await r.json(); const m = new Map<string, number>(); d.forEach((i) => m.set(i.drinkName, i.totalPoured)); setStats(m); } } catch (err) { console.error(err); } }
