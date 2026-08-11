@@ -15,7 +15,17 @@ export async function PUT(
     }
 
     const { id } = await params;
+    
+    if (!id) {
+      return NextResponse.json({ error: "User-ID fehlt" }, { status: 400 });
+    }
+    
     const userId = parseInt(id);
+    
+    if (isNaN(userId)) {
+      return NextResponse.json({ error: "Ungültige User-ID" }, { status: 400 });
+    }
+    
     const body = await req.json();
     const { username } = body;
 
