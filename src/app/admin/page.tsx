@@ -869,6 +869,41 @@ export default function AdminPage() {
           </div>
         </div>
       )}
+
+      {/* Employee Form Modal */}
+      {showEmployeeForm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
+          <form onSubmit={handleSaveEmployee} className="bg-gray-800 rounded-2xl p-6 w-full max-w-sm shadow-2xl border border-gray-700">
+            <h2 className="text-xl font-bold mb-4">Neuer Mitarbeiter</h2>
+            <div className="mb-4">
+              <label className="block text-sm text-gray-400 mb-1">Anzeigename</label>
+              <input type="text" value={employeeFormData.displayName} onChange={(e) => setEmployeeFormData({ displayName: e.target.value })} className="w-full px-4 py-2.5 rounded-xl bg-gray-700 text-white border border-gray-600 focus:border-blue-500 focus:outline-none" autoFocus />
+            </div>
+            <div className="flex gap-3">
+              <button type="button" onClick={() => setShowEmployeeForm(false)} className="flex-1 py-3 rounded-xl font-bold bg-gray-600 hover:bg-gray-500">Abbrechen</button>
+              <button type="submit" className="flex-1 py-3 rounded-xl font-bold bg-green-600 hover:bg-green-500">Speichern</button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {/* Alias Form Modal */}
+      {showAliasForm && aliasTargetEmployee && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
+          <form onSubmit={handleAddAlias} className="bg-gray-800 rounded-2xl p-6 w-full max-w-sm shadow-2xl border border-gray-700">
+            <h2 className="text-xl font-bold mb-2">Alias für {aliasTargetEmployee.displayName}</h2>
+            <p className="text-xs text-gray-400 mb-4">Füge einen Alias-Namen hinzu, der in der Auswertung diesem Mitarbeiter zugeordnet wird.</p>
+            <div className="mb-4">
+              <label className="block text-sm text-gray-400 mb-1">Alias-Name</label>
+              <input type="text" value={aliasName} onChange={(e) => setAliasName(e.target.value)} className="w-full px-4 py-2.5 rounded-xl bg-gray-700 text-white border border-gray-600 focus:border-blue-500 focus:outline-none" placeholder="z.B. Susi" autoFocus />
+            </div>
+            <div className="flex gap-3">
+              <button type="button" onClick={() => { setShowAliasForm(false); setAliasTargetEmployee(null); }} className="flex-1 py-3 rounded-xl font-bold bg-gray-600 hover:bg-gray-500">Abbrechen</button>
+              <button type="submit" className="flex-1 py-3 rounded-xl font-bold bg-blue-600 hover:bg-blue-500">Hinzufügen</button>
+            </div>
+          </form>
+        </div>
+      )}
     </div>
   );
 
@@ -1033,41 +1068,6 @@ function PasswordModal({user,value,onChange,onSubmit,onClose}:any){return(
     <div className="flex gap-3"><button type="button" onClick={onClose} className="flex-1 py-3 rounded-xl font-bold bg-gray-600">Abbrechen</button><button type="submit" className="flex-1 py-3 rounded-xl font-bold bg-amber-600">Speichern</button></div>
   </form></div>
   );}
-
-{/* Employee Form Modal */}
-{showEmployeeForm && (
-  <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
-    <form onSubmit={handleSaveEmployee} className="bg-gray-800 rounded-2xl p-6 w-full max-w-sm shadow-2xl border border-gray-700">
-      <h2 className="text-xl font-bold mb-4">Neuer Mitarbeiter</h2>
-      <div className="mb-4">
-        <label className="block text-sm text-gray-400 mb-1">Anzeigename</label>
-        <input type="text" value={employeeFormData.displayName} onChange={(e) => setEmployeeFormData({ displayName: e.target.value })} className="w-full px-4 py-2.5 rounded-xl bg-gray-700 text-white border border-gray-600 focus:border-blue-500 focus:outline-none" autoFocus />
-      </div>
-      <div className="flex gap-3">
-        <button type="button" onClick={() => setShowEmployeeForm(false)} className="flex-1 py-3 rounded-xl font-bold bg-gray-600 hover:bg-gray-500">Abbrechen</button>
-        <button type="submit" className="flex-1 py-3 rounded-xl font-bold bg-green-600 hover:bg-green-500">Speichern</button>
-      </div>
-    </form>
-  </div>
-)}
-
-{/* Alias Form Modal */}
-{showAliasForm && aliasTargetEmployee && (
-  <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
-    <form onSubmit={handleAddAlias} className="bg-gray-800 rounded-2xl p-6 w-full max-w-sm shadow-2xl border border-gray-700">
-      <h2 className="text-xl font-bold mb-2">Alias für {aliasTargetEmployee.displayName}</h2>
-      <p className="text-xs text-gray-400 mb-4">Füge einen Alias-Namen hinzu, der in der Auswertung diesem Mitarbeiter zugeordnet wird.</p>
-      <div className="mb-4">
-        <label className="block text-sm text-gray-400 mb-1">Alias-Name</label>
-        <input type="text" value={aliasName} onChange={(e) => setAliasName(e.target.value)} className="w-full px-4 py-2.5 rounded-xl bg-gray-700 text-white border border-gray-600 focus:border-blue-500 focus:outline-none" placeholder="z.B. Susi" autoFocus />
-      </div>
-      <div className="flex gap-3">
-        <button type="button" onClick={() => { setShowAliasForm(false); setAliasTargetEmployee(null); }} className="flex-1 py-3 rounded-xl font-bold bg-gray-600 hover:bg-gray-500">Abbrechen</button>
-        <button type="submit" className="flex-1 py-3 rounded-xl font-bold bg-blue-600 hover:bg-blue-500">Hinzufügen</button>
-      </div>
-    </form>
-  </div>
-)}
 
 function PasswordChangeModal({isAdmin, targetUserId, targetUsername, onClose}: any) {
   const [newPassword, setNewPassword] = useState("");
