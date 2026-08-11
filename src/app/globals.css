@@ -31,3 +31,32 @@ button {
 .tabular-nums {
   font-variant-numeric: tabular-nums;
 }
+/* Logo watermark background */
+.logo-watermark {
+  position: relative;
+  overflow: hidden;
+}
+
+.logo-watermark::before {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 800px;
+  height: 800px;
+  max-width: 80vw;
+  max-height: 80vh;
+  background-image: url('/images/turbotap-logo.png');
+  background-size: contain;
+  background-repeat: no-repeat;
+  background-position: center;
+  opacity: 0.12;
+  pointer-events: none;
+  z-index: 0;
+}
+
+.logo-watermark > * {
+  position: relative;
+  z-index: 1;
+}
