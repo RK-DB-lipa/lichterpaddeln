@@ -46,14 +46,20 @@ export async function PUT(
     }
 
     // Username aktualisieren
-    await db
+    const result = await db
       .update(managedUsers)
       .set({ username: username.trim() })
-      .where(eq(managedUsers.id, userId));
+      .where(eq(managedUsers.id, userId))
+      .returning();
+
+    if (result.length === 0) {
+      return NextResponse.json({ error: "Update fehlgeschlagen" }, { status: 500 });
+    }
 
     return NextResponse.json({ success: true, message: "Username geändert", username: username.trim() });
   } catch (error) {
     console.error("Change username error:", error);
-    return NextResponse.json({ error: "Interner Serverfehler" }, { status: 500 });
+    const errorMessage = error instanceof Error ? error.message : "Unbekannter Fehler";
+    return NextResponse.json({ error: "Interner Serverfehler", details: errorMessage }, { status: 500 });
   }
 }
