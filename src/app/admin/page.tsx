@@ -296,7 +296,7 @@ export default function AdminPage() {
   async function handleChangeUsername() {
     if (!usernameTargetUser || !newUsername.trim()) return;
     try {
-      await api(`/api/users/${usernameTargetUser.id}/username`, "PUT", { username: newUsername.trim() });
+      await api(`/api/users/${usernameTargetUser.userId}/username`, "PUT", { username: newUsername.trim() });
       setShowUsernameModal(false);
       setUsernameTargetUser(null);
       setNewUsername("");
