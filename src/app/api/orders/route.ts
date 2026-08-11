@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
-import { orders, orderItems, orderFoodItems, drinks, foods, cupCounters, salesPoints, foodQueue } from "@/db/schema";
+import { orders, orderItems, orderFoodItems, drinks, foods, cupCounters, salesPoints, foodQueue, employees, employeeAliases } from "@/db/schema";
 import { getSession } from "@/lib/auth";
 import { eq, sql, desc, and, gte, lte } from "drizzle-orm";
 
@@ -21,6 +21,33 @@ function buildDateTime(date: string | null, time: string | null, type: "start" |
   const t = time || (type === "start" ? "00:00" : "23:59");
   
   return new Date(`${d}T${t}:00.000Z`);
+}
+
+// Helper: Alias-Namen in Hauptnamen auflösen
+async function resolveEmployeeName(tenantId: number, aliasName: string): Promise<string> {
+  if (!aliasName) return "";
+  
+  // Prüfen ob der Name ein Alias ist
+  const alias = await db
+    .select({
+      employeeId: employeeAliases.employeeId,
+      displayName: employees.displayName,
+    })
+    .from(employeeAliases)
+    .innerJoin(employees, eq(employeeAliases.employeeId, employees.id))
+    .where(and(
+      eq(employeeAliases.tenantId, tenantId),
+      eq(employeeAliases.aliasName, aliasName.trim())
+    ))
+    .limit(1);
+  
+  if (alias.length > 0) {
+    // Alias gefunden → Hauptnamen zurückgeben
+    return alias[0].displayName;
+  }
+  
+  // Kein Alias gefunden → Originalnamen zurückgeben
+  return aliasName.trim();
 }
 
 export async function POST(req: NextRequest) {
@@ -105,6 +132,12 @@ export async function POST(req: NextRequest) {
     const depositReturnAmount = (depositReturned || 0) * 2;
     const netDeposit = totalDeposit - depositReturnAmount;
 
+    // Alias-Namen in Hauptnamen auflösen
+    const resolvedCashierName = await resolveEmployeeName(
+      tenantId,
+      cashierName || displayName || ""
+    );
+
     const [order] = await db
       .insert(orders)
       .values({
@@ -114,7 +147,7 @@ export async function POST(req: NextRequest) {
         totalDeposit: +totalDeposit.toFixed(2),
         totalDepositReturned: depositReturnAmount,
         netDeposit: +netDeposit.toFixed(2),
-        cashierName: cashierName || displayName || "",
+        cashierName: resolvedCashierName,
       })
       .returning();
 
