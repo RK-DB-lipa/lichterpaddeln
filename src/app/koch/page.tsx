@@ -85,9 +85,19 @@ export default function KochPage() {
       if (r.ok) {
         const data: Food[] = await r.json();
         setFoods(data);
+        
         // Extract unique groups
         const groups = Array.from(new Set(data.map(f => f.group).filter(g => g))) as string[];
-        setButtonList(groups.length > 0 ? groups : DEFAULT_COOK_BUTTONS);
+        
+        // Extract individual foods (without group)
+        const individualFoods = data
+          .filter(f => !f.group)
+          .map(f => f.name);
+        
+        // Combine: groups first, then individual foods
+        const allButtons = [...groups, ...individualFoods];
+        
+        setButtonList(allButtons.length > 0 ? allButtons : DEFAULT_COOK_BUTTONS);
       }
     } catch { setButtonList(DEFAULT_COOK_BUTTONS); }
   }
