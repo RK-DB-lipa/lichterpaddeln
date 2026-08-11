@@ -16,6 +16,23 @@ export const managedUsers = pgTable("managed_users", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
+// Employee table - represents a real person
+export const employees = pgTable("employees", {
+  id: serial("id").primaryKey(),
+  tenantId: integer("tenant_id").notNull().default(0),
+  displayName: varchar("display_name", { length: 200 }).notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+// Employee aliases - maps cashier names to employees
+export const employeeAliases = pgTable("employee_aliases", {
+  id: serial("id").primaryKey(),
+  tenantId: integer("tenant_id").notNull().default(0),
+  employeeId: integer("employee_id").notNull().references(() => employees.id),
+  aliasName: varchar("alias_name", { length: 200 }).notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
 export const salesPoints = pgTable("sales_points", {
   id: serial("id").primaryKey(),
   tenantId: integer("tenant_id").notNull().default(0),
