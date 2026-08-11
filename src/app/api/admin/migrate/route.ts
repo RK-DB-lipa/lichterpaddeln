@@ -111,6 +111,22 @@ const STATEMENTS = [
   // --- NEU: Index für pourer_name-Suche ---
   `CREATE INDEX IF NOT EXISTS pour_stats_tenant_sp_drink_idx ON pour_stats (tenant_id, sales_point_id, drink_name)`,
   `CREATE INDEX IF NOT EXISTS orders_cashier_name_idx ON orders (tenant_id, cashier_name)`,
+
+  // --- NEU: Mitarbeiter und Aliase ---
+  `CREATE TABLE IF NOT EXISTS employees (
+    id serial PRIMARY KEY,
+    tenant_id integer NOT NULL DEFAULT 0,
+    display_name varchar(200) NOT NULL,
+    created_at timestamp NOT NULL DEFAULT now()
+  )`,
+  `CREATE TABLE IF NOT EXISTS employee_aliases (
+    id serial PRIMARY KEY,
+    tenant_id integer NOT NULL DEFAULT 0,
+    employee_id integer NOT NULL REFERENCES employees(id),
+    alias_name varchar(200) NOT NULL,
+    created_at timestamp NOT NULL DEFAULT now()
+  )`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS employee_aliases_tenant_name_idx ON employee_aliases (tenant_id, alias_name)`,
 ];
 
 export async function POST() {
