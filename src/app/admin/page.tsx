@@ -78,6 +78,14 @@ export default function AdminPage() {
   // Gruppen
   const [groups, setGroups] = useState<string[]>([]);
 
+  // Mitarbeiter
+  const [employees, setEmployees] = useState<any[]>([]);
+  const [showEmployeeForm, setShowEmployeeForm] = useState(false);
+  const [employeeFormData, setEmployeeFormData] = useState({ displayName: "" });
+  const [showAliasForm, setShowAliasForm] = useState(false);
+  const [aliasTargetEmployee, setAliasTargetEmployee] = useState<any>(null);
+  const [aliasName, setAliasName] = useState("");
+
   const isSuperAdmin = session?.role === "admin" && session?.username === "admin";
 
   const checkAuth = useCallback(async () => {
@@ -95,6 +103,9 @@ export default function AdminPage() {
   }, []);
   const fetchEvents = useCallback(async () => {
     try { const r = await fetch("/api/events"); if (r.ok) setEvents(await r.json()); } catch (err) { console.error(err); }
+  }, []);
+  const fetchEmployees = useCallback(async () => {
+    try { const r = await fetch("/api/employees"); if (r.ok) setEmployees(await r.json()); } catch (err) { console.error(err); }
   }, []);
   const fetchSalesPoints = useCallback(async () => {
     try { const r = await fetch("/api/sales-points"); if (r.ok) setSalesPoints(await r.json()); } catch (err) { console.error(err); }
@@ -145,7 +156,7 @@ export default function AdminPage() {
   }, []);
 
   useEffect(() => { checkAuth(); }, [checkAuth]);
-  useEffect(() => { if (session) { fetchDrinks(); fetchGroups(); fetchFoods(); fetchEvents(); fetchSalesPoints(); fetchOrders(); fetchPourStats(); fetchCupCounters(); fetchNames(); } }, [session, fetchDrinks, fetchGroups, fetchFoods, fetchEvents, fetchSalesPoints, fetchOrders, fetchPourStats, fetchCupCounters, fetchNames]);
+  useEffect(() => { if (session) { fetchDrinks(); fetchGroups(); fetchFoods(); fetchEvents(); fetchEmployees(); fetchSalesPoints(); fetchOrders(); fetchPourStats(); fetchCupCounters(); fetchNames(); } }, [session, fetchDrinks, fetchGroups, fetchFoods, fetchEvents, fetchEmployees, fetchSalesPoints, fetchOrders, fetchPourStats, fetchCupCounters, fetchNames]);
   useEffect(() => { if (activeTab === "users" && isSuperAdmin && tenants.length === 0) fetchTenants(); }, [activeTab, isSuperAdmin]);
 
   async function handleLogin(e: React.FormEvent) {
@@ -184,6 +195,38 @@ export default function AdminPage() {
       fetchDrinks();
     }
     catch (err: any) { alert(err.message || "Fehler beim Verschieben"); }
+  }
+
+  // Mitarbeiter-Handler
+  async function handleSaveEmployee(e: React.FormEvent) {
+    e.preventDefault();
+    if (!employeeFormData.displayName.trim()) return;
+    try {
+      await api("/api/employees", "POST", { displayName: employeeFormData.displayName.trim() });
+      setShowEmployeeForm(false);
+      setEmployeeFormData({ displayName: "" });
+      fetchEmployees();
+    } catch (err: any) { alert(err.message || "Fehler beim Speichern"); }
+  }
+
+  async function handleAddAlias(e: React.FormEvent) {
+    e.preventDefault();
+    if (!aliasTargetEmployee || !aliasName.trim()) return;
+    try {
+      await api("/api/employees/aliases", "POST", { employeeId: aliasTargetEmployee.id, aliasName: aliasName.trim() });
+      setShowAliasForm(false);
+      setAliasName("");
+      setAliasTargetEmployee(null);
+      fetchEmployees();
+    } catch (err: any) { alert(err.message || "Fehler beim Hinzufügen"); }
+  }
+
+  async function handleRemoveAlias(aliasId: number) {
+    if (!confirm("Alias wirklich entfernen?")) return;
+    try {
+      await api(`/api/employees/aliases?id=${aliasId}`, "DELETE");
+      fetchEmployees();
+    } catch (err: any) { alert(err.message || "Fehler beim Entfernen"); }
   }
 
   // Food handlers
@@ -321,7 +364,7 @@ export default function AdminPage() {
       </header>
 
       <div className="flex border-b border-gray-700 shrink-0">
-        {[["drinks","🍺 Getränke"],["foods","🍔 Speisen"],["salesPoints","🏪 Verkaufsstellen"],["events","📅 Events"],["cups","🥤 Becher"],["orders","📊 Bestellungen"],...(isSuperAdmin ? [["users","👥 Nutzer"],["super","🔐 Super-Admin"]] : [["users","👥 Nutzer"]])].map(([tab,label]) => (
+        {[["drinks","🍺 Getränke"],["foods","🍔 Speisen"],["salesPoints","🏪 Verkaufsstellen"],["events","📅 Events"],["cups","🥤 Becher"],["orders","📊 Bestellungen"],["employees","👤 Mitarbeiter"],...(isSuperAdmin ? [["users","👥 Nutzer"],["super","🔐 Super-Admin"]] : [["users","👥 Nutzer"]])].map(([tab,label]) => (
           <button key={tab} onClick={() => setActiveTab(tab)} className={`flex-1 py-3 text-center font-bold text-sm ${activeTab === tab ? "border-b-2 border-amber-500 text-amber-400" : "text-gray-400"}`}>{label}</button>
         ))}
       </div>
@@ -578,6 +621,38 @@ export default function AdminPage() {
                 </div>
               </button>
             ))}
+          </div>
+        )}
+
+        {/* EMPLOYEES TAB */}
+        {activeTab === "employees" && (
+          <div>
+            <div className="flex justify-between items-center mb-4">
+              <h2 className="text-lg font-bold">👤 Mitarbeiter</h2>
+              <button onClick={() => { setEmployeeFormData({ displayName: "" }); setShowEmployeeForm(true); }} className="px-4 py-2 rounded-xl bg-green-600 hover:bg-green-500 font-bold text-sm">+ Neuer Mitarbeiter</button>
+            </div>
+            <p className="text-xs text-gray-400 mb-4">Verwalte Mitarbeiter und ihre Alias-Namen für die Auswertung.</p>
+            <div className="space-y-2">
+              {employees.map((emp) => (
+                <div key={emp.id} className="bg-gray-800 rounded-xl p-4 border border-gray-700">
+                  <div className="flex items-center justify-between mb-2">
+                    <div className="font-bold text-base">{emp.displayName}</div>
+                    <button onClick={() => { setAliasTargetEmployee(emp); setAliasName(""); setShowAliasForm(true); }} className="px-3 py-1.5 rounded-lg bg-blue-700 hover:bg-blue-600 text-xs font-bold">+ Alias</button>
+                  </div>
+                  {emp.aliases && emp.aliases.length > 0 && (
+                    <div className="flex flex-wrap gap-2 mt-2">
+                      {emp.aliases.map((alias: string, i: number) => (
+                        <div key={i} className="bg-gray-700 rounded-lg px-3 py-1.5 text-xs flex items-center gap-2">
+                          <span>{alias}</span>
+                          <button onClick={() => handleRemoveAlias(emp.aliasIds?.[i])} className="text-red-400 hover:text-red-300">✕</button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              ))}
+              {employees.length === 0 && <p className="text-gray-500 text-center py-8">Noch keine Mitarbeiter angelegt.</p>}
+            </div>
           </div>
         )}
 
@@ -957,7 +1032,42 @@ function PasswordModal({user,value,onChange,onSubmit,onClose}:any){return(
     <div className="mb-4"><input type="text" value={value} onChange={(e)=>onChange(e.target.value)} className="w-full px-4 py-2.5 rounded-xl bg-gray-700 text-white border border-gray-600 focus:border-blue-500 focus:outline-none" autoFocus/></div>
     <div className="flex gap-3"><button type="button" onClick={onClose} className="flex-1 py-3 rounded-xl font-bold bg-gray-600">Abbrechen</button><button type="submit" className="flex-1 py-3 rounded-xl font-bold bg-amber-600">Speichern</button></div>
   </form></div>
-);}
+  );}
+
+{/* Employee Form Modal */}
+{showEmployeeForm && (
+  <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
+    <form onSubmit={handleSaveEmployee} className="bg-gray-800 rounded-2xl p-6 w-full max-w-sm shadow-2xl border border-gray-700">
+      <h2 className="text-xl font-bold mb-4">Neuer Mitarbeiter</h2>
+      <div className="mb-4">
+        <label className="block text-sm text-gray-400 mb-1">Anzeigename</label>
+        <input type="text" value={employeeFormData.displayName} onChange={(e) => setEmployeeFormData({ displayName: e.target.value })} className="w-full px-4 py-2.5 rounded-xl bg-gray-700 text-white border border-gray-600 focus:border-blue-500 focus:outline-none" autoFocus />
+      </div>
+      <div className="flex gap-3">
+        <button type="button" onClick={() => setShowEmployeeForm(false)} className="flex-1 py-3 rounded-xl font-bold bg-gray-600 hover:bg-gray-500">Abbrechen</button>
+        <button type="submit" className="flex-1 py-3 rounded-xl font-bold bg-green-600 hover:bg-green-500">Speichern</button>
+      </div>
+    </form>
+  </div>
+)}
+
+{/* Alias Form Modal */}
+{showAliasForm && aliasTargetEmployee && (
+  <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
+    <form onSubmit={handleAddAlias} className="bg-gray-800 rounded-2xl p-6 w-full max-w-sm shadow-2xl border border-gray-700">
+      <h2 className="text-xl font-bold mb-2">Alias für {aliasTargetEmployee.displayName}</h2>
+      <p className="text-xs text-gray-400 mb-4">Füge einen Alias-Namen hinzu, der in der Auswertung diesem Mitarbeiter zugeordnet wird.</p>
+      <div className="mb-4">
+        <label className="block text-sm text-gray-400 mb-1">Alias-Name</label>
+        <input type="text" value={aliasName} onChange={(e) => setAliasName(e.target.value)} className="w-full px-4 py-2.5 rounded-xl bg-gray-700 text-white border border-gray-600 focus:border-blue-500 focus:outline-none" placeholder="z.B. Susi" autoFocus />
+      </div>
+      <div className="flex gap-3">
+        <button type="button" onClick={() => { setShowAliasForm(false); setAliasTargetEmployee(null); }} className="flex-1 py-3 rounded-xl font-bold bg-gray-600 hover:bg-gray-500">Abbrechen</button>
+        <button type="submit" className="flex-1 py-3 rounded-xl font-bold bg-blue-600 hover:bg-blue-500">Hinzufügen</button>
+      </div>
+    </form>
+  </div>
+)}
 
 function PasswordChangeModal({isAdmin, targetUserId, targetUsername, onClose}: any) {
   const [newPassword, setNewPassword] = useState("");
