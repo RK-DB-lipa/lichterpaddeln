@@ -2,8 +2,8 @@
 
 import { useState, useEffect, useCallback, useRef } from "react";
 
-type Drink = { id: number; name: string; priceGross: number; taxRate: number; hasDeposit: boolean; depositAmount: number; cupSize: string; color: string; imageUrl: string | null; isPourDrink: boolean; salesPointIds?: number[]; group?: string | null; };
-type Food = { id: number; name: string; priceGross: number; taxRate: number; color: string; imageUrl: string | null; isCookItem: boolean; group?: string | null; };
+type Drink = { id: number; name: string; priceGross: number; taxRate: number; hasDeposit: boolean; depositAmount: number; cupSize: string; color: string; imageUrl: string | null; isPourDrink: boolean; salesPointIds?: number[]; group?: string | null; reducedPrice?: number; reductionPercent?: number; hasReduction?: boolean; };
+type Food = { id: number; name: string; priceGross: number; taxRate: number; color: string; imageUrl: string | null; isCookItem: boolean; group?: string | null; reducedPrice?: number; reductionPercent?: number; hasReduction?: boolean; };
 type Event = { id: number; name: string; startDate: string; endDate: string; isActive: boolean; drinkCount: number; foodCount: number; };
 type SalesPoint = { id: number; name: string; };
 type OrderItem = { drinkId: number; drinkName: string; quantity: number; unitPriceGross: number; unitDeposit: number; };
@@ -110,26 +110,30 @@ export default function POSPage() {
 
   const addDrink = useCallback((drink: Drink) => {
     setPourSent(false);
+    // Verwende reduzierten Preis wenn verfügbar, sonst normalen Preis
+    const priceToUse = drink.hasReduction && drink.reducedPrice !== undefined ? drink.reducedPrice : drink.priceGross;
     setOrderItems((prev) => {
       const next = new Map(prev);
       const existing = next.get(drink.id);
       if (existing) {
         next.set(drink.id, { ...existing, quantity: existing.quantity + 1 });
       } else {
-        next.set(drink.id, { drinkId: drink.id, drinkName: drink.name, quantity: 1, unitPriceGross: drink.priceGross, unitDeposit: drink.hasDeposit ? drink.depositAmount : 0 });
+        next.set(drink.id, { drinkId: drink.id, drinkName: drink.name, quantity: 1, unitPriceGross: priceToUse, unitDeposit: drink.hasDeposit ? drink.depositAmount : 0 });
       }
       return next;
     });
   }, []);
 
   const addFood = useCallback((food: Food) => {
+    // Verwende reduzierten Preis wenn verfügbar, sonst normalen Preis
+    const priceToUse = food.hasReduction && food.reducedPrice !== undefined ? food.reducedPrice : food.priceGross;
     setOrderFoodItems((prev) => {
       const next = new Map(prev);
       const existing = next.get(food.id);
       if (existing) {
         next.set(food.id, { ...existing, quantity: existing.quantity + 1 });
       } else {
-        next.set(food.id, { foodId: food.id, foodName: food.name, quantity: 1, unitPriceGross: food.priceGross });
+        next.set(food.id, { foodId: food.id, foodName: food.name, quantity: 1, unitPriceGross: priceToUse });
       }
       return next;
     });
@@ -372,7 +376,23 @@ export default function POSPage() {
                         {count > 0 && <div className="absolute -top-1.5 -right-1.5 bg-white text-gray-900 rounded-full w-6 h-6 md:w-7 md:h-7 flex items-center justify-center font-extrabold text-sm shadow-lg border border-gray-200">{count}</div>}
                         {removeMode && count > 0 && <div className="absolute -top-1.5 -left-1.5 bg-red-500 text-white rounded-full w-5 h-5 flex items-center justify-center font-black text-xs shadow-lg">−</div>}
                         <div className="font-extrabold text-sm md:text-base leading-tight drop-shadow-md">{drink.name}</div>
-                        <div className="mt-auto"><div className="text-lg md:text-xl font-extrabold drop-shadow-md">{drink.priceGross.toFixed(2)} €</div>{drink.hasDeposit && <div className="text-[10px] opacity-80 mt-0.5 drop-shadow">+ {drink.depositAmount.toFixed(2)} € Pfand</div>}<div className="text-[9px] opacity-60 mt-0.5">{drink.taxRate}% MwSt.</div></div>
+                        <div className="mt-auto">
+                          <div className="text-lg md:text-xl font-extrabold drop-shadow-md">
+                            {drink.hasReduction && drink.reducedPrice !== undefined ? (
+                              <>
+                                <span className="text-sm line-through opacity-60 mr-1">{drink.priceGross.toFixed(2)} €</span>
+                                <span className="text-green-400">{drink.reducedPrice.toFixed(2)} €</span>
+                              </>
+                            ) : (
+                              drink.priceGross.toFixed(2) + " €"
+                            )}
+                          </div>
+                          {drink.hasDeposit && <div className="text-[10px] opacity-80 mt-0.5 drop-shadow">+ {drink.depositAmount.toFixed(2)} € Pfand</div>}
+                          <div className="text-[9px] opacity-60 mt-0.5">
+                            {drink.taxRate}% MwSt.
+                            {drink.hasReduction && drink.reductionPercent && <span className="ml-1 text-green-400 font-bold">-{drink.reductionPercent}%</span>}
+                          </div>
+                        </div>
                       </button>
                     </div>
                   );
@@ -390,7 +410,23 @@ export default function POSPage() {
                     {count > 0 && <div className="absolute -top-1.5 -right-1.5 bg-white text-gray-900 rounded-full w-6 h-6 md:w-7 md:h-7 flex items-center justify-center font-extrabold text-sm shadow-lg border border-gray-200">{count}</div>}
                     {removeMode && count > 0 && <div className="absolute -top-1.5 -left-1.5 bg-red-500 text-white rounded-full w-5 h-5 flex items-center justify-center font-black text-xs shadow-lg">−</div>}
                     <div className="font-extrabold text-sm md:text-base leading-tight drop-shadow-md">{food.name}</div>
-                    <div className="mt-auto"><div className="text-lg md:text-xl font-extrabold drop-shadow-md">{food.priceGross.toFixed(2)} €</div>{food.group && <div className="text-[10px] opacity-80 mt-0.5 drop-shadow">📁 {food.group}</div>}<div className="text-[9px] opacity-60 mt-0.5">{food.taxRate}% MwSt.</div></div>
+                    <div className="mt-auto">
+                      <div className="text-lg md:text-xl font-extrabold drop-shadow-md">
+                        {food.hasReduction && food.reducedPrice !== undefined ? (
+                          <>
+                            <span className="text-sm line-through opacity-60 mr-1">{food.priceGross.toFixed(2)} €</span>
+                            <span className="text-green-400">{food.reducedPrice.toFixed(2)} €</span>
+                          </>
+                        ) : (
+                          food.priceGross.toFixed(2) + " €"
+                        )}
+                      </div>
+                      {food.group && <div className="text-[10px] opacity-80 mt-0.5 drop-shadow">📁 {food.group}</div>}
+                      <div className="text-[9px] opacity-60 mt-0.5">
+                        {food.taxRate}% MwSt.
+                        {food.hasReduction && food.reductionPercent && <span className="ml-1 text-green-400 font-bold">-{food.reductionPercent}%</span>}
+                      </div>
+                    </div>
                   </button>
                 );
               })}
