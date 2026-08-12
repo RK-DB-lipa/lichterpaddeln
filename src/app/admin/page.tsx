@@ -150,9 +150,10 @@ export default function AdminPage() {
   }, []);
 
   useEffect(() => { checkAuth(); }, [checkAuth]);
-  useEffect(() => { if (session) { fetchDrinks(); fetchGroups(); fetchFoods(); fetchEvents(); fetchEmployees(); fetchSalesPoints(); fetchOrders(); fetchPourStats(); fetchCupCounters(); fetchNames(); } }, [session, fetchDrinks, fetchGroups, fetchFoods, fetchEvents, fetchEmployees, fetchSalesPoints, fetchOrders, fetchPourStats, fetchCupCounters, fetchNames]);
-  useEffect(() => { if (session) { fetchDrinks(); fetchGroups(); fetchFoods(); fetchEvents(); fetchEmployees(); fetchPriceReductions(); fetchSalesPoints(); fetchOrders(); fetchPourStats(); fetchCupCounters(); fetchNames(); } }, [session, fetchDrinks, fetchGroups, fetchFoods, fetchEvents, fetchEmployees, fetchPriceReductions, fetchSalesPoints, fetchOrders, fetchPourStats, fetchCupCounters, fetchNames]);
+  useEffect(() => { if (session) { fetchDrinks(); fetchGroups(); fetchFoods(); fetchEvents(); fetchEmployees(); fetchSalesPoints(); fetchOrders(); fetchPourStats(); fetchCupCounters(); fetchNames(); fetchPriceReductions(); } }, [session, fetchDrinks, fetchGroups, fetchFoods, fetchEvents, fetchEmployees, fetchSalesPoints, fetchOrders, fetchPourStats, fetchCupCounters, fetchNames, fetchPriceReductions]);
   useEffect(() => { if (activeTab === "users" && isSuperAdmin && tenants.length === 0) fetchTenants(); }, [activeTab, isSuperAdmin]);
+  // Sicherstellen, dass Bestellungen geladen werden wenn der Tab aktiv ist
+  useEffect(() => { if (session && activeTab === "orders") { fetchOrders(); } }, [session, activeTab, fetchOrders]);
 
   async function handleLogin(e: React.FormEvent) {
     e.preventDefault(); setLoginError("");
