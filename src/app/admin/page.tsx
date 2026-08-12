@@ -15,19 +15,20 @@ export default function AdminPage() {
   const [priceReductions, setPriceReductions] = useState<any[]>([]);
   const [orders, setOrders] = useState<any[]>([]);
   const [tenants, setTenants] = useState<any[]>([]);
+  const [cupStats, setCupStats] = useState<any>(null);
   
   // Form states
   const [showDrinkForm, setShowDrinkForm] = useState(false);
   const [editingDrink, setEditingDrink] = useState<any>(null);
-  const [drinkForm, setDrinkForm] = useState({ name: "", priceGross: "", taxRate: "19", hasDeposit: true, depositAmount: "2", cupSize: "04", color: "#3B82F6", isPourDrink: false, group: "" });
+  const [drinkForm, setDrinkForm] = useState({ name: "", priceGross: "", taxRate: "19", hasDeposit: true, depositAmount: "2", cupSize: "04", color: "#3B82F6", isPourDrink: false, group: "", salesPointIds: [] as number[] });
   
   const [showFoodForm, setShowFoodForm] = useState(false);
   const [editingFood, setEditingFood] = useState<any>(null);
-  const [foodForm, setFoodForm] = useState({ name: "", priceGross: "", taxRate: "19", color: "#10B981", isCookItem: false, group: "" });
+  const [foodForm, setFoodForm] = useState({ name: "", priceGross: "", taxRate: "19", color: "#10B981", isCookItem: false, group: "", salesPointIds: [] as number[] });
   
   const [showSPForm, setShowSPForm] = useState(false);
   const [editingSP, setEditingSP] = useState<any>(null);
-  const [spForm, setSpForm] = useState({ name: "" });
+  const [spForm, setSpForm] = useState({ name: "", sortOrder: "" });
   
   const [showEventForm, setShowEventForm] = useState(false);
   const [editingEvent, setEditingEvent] = useState<any>(null);
@@ -36,6 +37,10 @@ export default function AdminPage() {
   const [showReductionForm, setShowReductionForm] = useState(false);
   const [editingReduction, setEditingReduction] = useState<any>(null);
   const [reductionForm, setReductionForm] = useState({ itemId: 0, itemType: "drink", startTime: "22:00", endTime: "02:00", reductionPercent: 20 });
+  
+  const [showTenantForm, setShowTenantForm] = useState(false);
+  const [editingTenant, setEditingTenant] = useState<any>(null);
+  const [tenantForm, setTenantForm] = useState({ username: "", password: "", expiresAt: "", isActive: true });
 
   useEffect(() => {
     const checkAuth = async () => {
@@ -62,7 +67,7 @@ export default function AdminPage() {
 
   const fetchAll = async () => {
     try {
-      const [drinksRes, foodsRes, spRes, eventsRes, reductionsRes, ordersRes, tenantsRes] = await Promise.all([
+      const [drinksRes, foodsRes, spRes, eventsRes, reductionsRes, ordersRes, tenantsRes, cupStatsRes] = await Promise.all([
         fetch("/api/drinks"),
         fetch("/api/foods"),
         fetch("/api/sales-points"),
@@ -70,6 +75,7 @@ export default function AdminPage() {
         fetch("/api/price-reductions"),
         fetch("/api/orders"),
         fetch("/api/users"),
+        fetch("/api/cups/stats"),
       ]);
       if (drinksRes.ok) setDrinks(await drinksRes.json());
       if (foodsRes.ok) setFoods(await foodsRes.json());
@@ -78,6 +84,7 @@ export default function AdminPage() {
       if (reductionsRes.ok) setPriceReductions(await reductionsRes.json());
       if (ordersRes.ok) setOrders(await ordersRes.json());
       if (tenantsRes.ok) setTenants(await tenantsRes.json());
+      if (cupStatsRes.ok) setCupStats(await cupStatsRes.json());
     } catch (err) {
       console.error(err);
     }
@@ -203,6 +210,29 @@ export default function AdminPage() {
     fetchAll();
   };
 
+  // Tenant handlers
+  const handleSaveTenant = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      if (editingTenant) {
+        await fetch(`/api/users/${editingTenant.userId}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(tenantForm) });
+      } else {
+        await fetch("/api/users", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(tenantForm) });
+      }
+      setShowTenantForm(false);
+      setEditingTenant(null);
+      fetchAll();
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const handleDeleteTenant = async (userId: number) => {
+    if (!confirm("Nutzer löschen?")) return;
+    await fetch(`/api/users/${userId}`, { method: "DELETE" });
+    fetchAll();
+  };
+
   if (loading) {
     return <div className="min-h-screen bg-gray-900 flex items-center justify-center text-white"><p>Laden...</p></div>;
   }
@@ -226,13 +256,14 @@ export default function AdminPage() {
       </header>
 
       <div className="flex border-b border-gray-700 shrink-0 overflow-x-auto">
-        {["drinks", "foods", "salesPoints", "events", "reductions", "orders"].map((tab) => (
+        {["drinks", "foods", "salesPoints", "events", "reductions", "cups", "orders"].map((tab) => (
           <button key={tab} onClick={() => setActiveTab(tab)} className={`flex-1 py-3 text-center font-bold text-sm whitespace-nowrap px-4 ${activeTab === tab ? "border-b-2 border-amber-500 text-amber-400" : "text-gray-400"}`}>
             {tab === "drinks" && "🍺 Getränke"}
             {tab === "foods" && "🍔 Speisen"}
             {tab === "salesPoints" && "🏪 Verkaufsstellen"}
             {tab === "events" && "📅 Events"}
             {tab === "reductions" && "💰 Preisaktionen"}
+            {tab === "cups" && "🥤 Becher"}
             {tab === "orders" && "📊 Bestellungen"}
           </button>
         ))}
@@ -248,7 +279,7 @@ export default function AdminPage() {
           <div>
             <div className="flex justify-between items-center mb-4">
               <h2 className="text-lg font-bold">Getränke</h2>
-              <button onClick={() => { setEditingDrink(null); setDrinkForm({ name: "", priceGross: "", taxRate: "19", hasDeposit: true, depositAmount: "2", cupSize: "04", color: "#3B82F6", isPourDrink: false, group: "" }); setShowDrinkForm(true); }} className="px-4 py-2 rounded-xl bg-green-600 hover:bg-green-500 font-bold text-sm">+ Neues Getränk</button>
+              <button onClick={() => { setEditingDrink(null); setDrinkForm({ name: "", priceGross: "", taxRate: "19", hasDeposit: true, depositAmount: "2", cupSize: "04", color: "#3B82F6", isPourDrink: false, group: "", salesPointIds: [] }); setShowDrinkForm(true); }} className="px-4 py-2 rounded-xl bg-green-600 hover:bg-green-500 font-bold text-sm">+ Neues Getränk</button>
             </div>
             <div className="space-y-2">
               {drinks.map((d) => (
@@ -256,9 +287,9 @@ export default function AdminPage() {
                   <div className="w-10 h-10 rounded-lg shrink-0 flex items-center justify-center font-bold text-white text-xs" style={{ backgroundColor: d.color }}>{d.name.charAt(0)}</div>
                   <div className="flex-1 min-w-0">
                     <div className="font-bold truncate">{d.name}</div>
-                    <div className="text-xs text-gray-400">{d.priceGross?.toFixed(2)} € · {d.taxRate}% MwSt.</div>
+                    <div className="text-xs text-gray-400">{d.priceGross?.toFixed(2)} € · {d.taxRate}% MwSt. · Gruppe: {d.group || "Keine"}</div>
                   </div>
-                  <button onClick={() => { setEditingDrink(d); setDrinkForm({ name: d.name, priceGross: d.priceGross.toString(), taxRate: d.taxRate.toString(), hasDeposit: d.hasDeposit, depositAmount: d.depositAmount.toString(), cupSize: d.cupSize, color: d.color, isPourDrink: d.isPourDrink, group: d.group || "" }); setShowDrinkForm(true); }} className="px-3 py-1.5 rounded-lg bg-gray-600 hover:bg-gray-500 text-sm">✏️</button>
+                  <button onClick={() => { setEditingDrink(d); setDrinkForm({ name: d.name, priceGross: d.priceGross.toString(), taxRate: d.taxRate.toString(), hasDeposit: d.hasDeposit, depositAmount: d.depositAmount.toString(), cupSize: d.cupSize, color: d.color, isPourDrink: d.isPourDrink, group: d.group || "", salesPointIds: d.salesPointIds || [] }); setShowDrinkForm(true); }} className="px-3 py-1.5 rounded-lg bg-gray-600 hover:bg-gray-500 text-sm">✏️</button>
                   <button onClick={() => handleDeleteDrink(d.id)} className="px-3 py-1.5 rounded-lg bg-red-900/50 hover:bg-red-800/50 text-sm">🗑️</button>
                 </div>
               ))}
@@ -270,7 +301,7 @@ export default function AdminPage() {
           <div>
             <div className="flex justify-between items-center mb-4">
               <h2 className="text-lg font-bold">Speisen</h2>
-              <button onClick={() => { setEditingFood(null); setFoodForm({ name: "", priceGross: "", taxRate: "19", color: "#10B981", isCookItem: false, group: "" }); setShowFoodForm(true); }} className="px-4 py-2 rounded-xl bg-green-600 hover:bg-green-500 font-bold text-sm">+ Neue Speise</button>
+              <button onClick={() => { setEditingFood(null); setFoodForm({ name: "", priceGross: "", taxRate: "19", color: "#10B981", isCookItem: false, group: "", salesPointIds: [] }); setShowFoodForm(true); }} className="px-4 py-2 rounded-xl bg-green-600 hover:bg-green-500 font-bold text-sm">+ Neue Speise</button>
             </div>
             <div className="space-y-2">
               {foods.map((f) => (
@@ -278,9 +309,9 @@ export default function AdminPage() {
                   <div className="w-10 h-10 rounded-lg shrink-0 flex items-center justify-center font-bold text-white text-xs" style={{ backgroundColor: f.color }}>{f.name.charAt(0)}</div>
                   <div className="flex-1 min-w-0">
                     <div className="font-bold truncate">{f.name}</div>
-                    <div className="text-xs text-gray-400">{f.priceGross?.toFixed(2)} € · {f.taxRate}% MwSt.</div>
+                    <div className="text-xs text-gray-400">{f.priceGross?.toFixed(2)} € · {f.taxRate}% MwSt. · Gruppe: {f.group || "Keine"}</div>
                   </div>
-                  <button onClick={() => { setEditingFood(f); setFoodForm({ name: f.name, priceGross: f.priceGross.toString(), taxRate: f.taxRate.toString(), color: f.color, isCookItem: f.isCookItem, group: f.group || "" }); setShowFoodForm(true); }} className="px-3 py-1.5 rounded-lg bg-gray-600 hover:bg-gray-500 text-sm">✏️</button>
+                  <button onClick={() => { setEditingFood(f); setFoodForm({ name: f.name, priceGross: f.priceGross.toString(), taxRate: f.taxRate.toString(), color: f.color, isCookItem: f.isCookItem, group: f.group || "", salesPointIds: f.salesPointIds || [] }); setShowFoodForm(true); }} className="px-3 py-1.5 rounded-lg bg-gray-600 hover:bg-gray-500 text-sm">✏️</button>
                   <button onClick={() => handleDeleteFood(f.id)} className="px-3 py-1.5 rounded-lg bg-red-900/50 hover:bg-red-800/50 text-sm">🗑️</button>
                 </div>
               ))}
@@ -292,7 +323,7 @@ export default function AdminPage() {
           <div>
             <div className="flex justify-between items-center mb-4">
               <h2 className="text-lg font-bold">Verkaufsstellen</h2>
-              <button onClick={() => { setEditingSP(null); setSpForm({ name: "" }); setShowSPForm(true); }} className="px-4 py-2 rounded-xl bg-green-600 hover:bg-green-500 font-bold text-sm">+ Neue Verkaufsstelle</button>
+              <button onClick={() => { setEditingSP(null); setSpForm({ name: "", sortOrder: "" }); setShowSPForm(true); }} className="px-4 py-2 rounded-xl bg-green-600 hover:bg-green-500 font-bold text-sm">+ Neue Verkaufsstelle</button>
             </div>
             <div className="space-y-2">
               {salesPoints.map((sp) => (
@@ -300,8 +331,9 @@ export default function AdminPage() {
                   <div className="w-10 h-10 rounded-lg shrink-0 flex items-center justify-center font-bold text-white text-xs bg-blue-600">{sp.name.charAt(0)}</div>
                   <div className="flex-1 min-w-0">
                     <div className="font-bold truncate">{sp.name}</div>
+                    <div className="text-xs text-gray-400">Sortierung: {sp.sortOrder}</div>
                   </div>
-                  <button onClick={() => { setEditingSP(sp); setSpForm({ name: sp.name }); setShowSPForm(true); }} className="px-3 py-1.5 rounded-lg bg-gray-600 hover:bg-gray-500 text-sm">✏️</button>
+                  <button onClick={() => { setEditingSP(sp); setSpForm({ name: sp.name, sortOrder: sp.sortOrder.toString() }); setShowSPForm(true); }} className="px-3 py-1.5 rounded-lg bg-gray-600 hover:bg-gray-500 text-sm">✏️</button>
                   <button onClick={() => handleDeleteSP(sp.id)} className="px-3 py-1.5 rounded-lg bg-red-900/50 hover:bg-red-800/50 text-sm">🗑️</button>
                 </div>
               ))}
@@ -357,14 +389,48 @@ export default function AdminPage() {
           </div>
         )}
 
+        {activeTab === "cups" && (
+          <div>
+            <h2 className="text-lg font-bold mb-4">🥤 Becher-Statistik</h2>
+            {cupStats && (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="bg-gray-800 rounded-xl p-4 border border-gray-700">
+                  <h3 className="font-bold mb-2">0,2L Becher</h3>
+                  <div className="space-y-2">
+                    <div className="flex justify-between"><span>Ausgegeben:</span><span className="font-bold">{cupStats.given02}</span></div>
+                    <div className="flex justify-between"><span>Zurückgenommen:</span><span className="font-bold">{cupStats.returned02}</span></div>
+                    <div className="flex justify-between border-t border-gray-700 pt-2"><span>Im Umlauf:</span><span className="font-bold text-amber-400">{cupStats.given02 - cupStats.returned02}</span></div>
+                  </div>
+                </div>
+                <div className="bg-gray-800 rounded-xl p-4 border border-gray-700">
+                  <h3 className="font-bold mb-2">0,4L Becher</h3>
+                  <div className="space-y-2">
+                    <div className="flex justify-between"><span>Ausgegeben:</span><span className="font-bold">{cupStats.given04}</span></div>
+                    <div className="flex justify-between"><span>Zurückgenommen:</span><span className="font-bold">{cupStats.returned04}</span></div>
+                    <div className="flex justify-between border-t border-gray-700 pt-2"><span>Im Umlauf:</span><span className="font-bold text-amber-400">{cupStats.given04 - cupStats.returned04}</span></div>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
         {activeTab === "orders" && (
           <div>
-            <h2 className="text-lg font-bold mb-4">Bestellungen</h2>
+            <h2 className="text-lg font-bold mb-4">📊 Bestellungen</h2>
             <div className="space-y-2">
               {orders.map((o) => (
                 <div key={o.id} className="bg-gray-800 rounded-xl p-3 border border-gray-700">
-                  <div className="font-bold">#{o.id} - {o.totalGross.toFixed(2)} €</div>
-                  <div className="text-xs text-gray-400">{new Date(o.createdAt).toLocaleString("de-DE")}</div>
+                  <div className="flex justify-between items-center">
+                    <div>
+                      <div className="font-bold">#{o.id}</div>
+                      <div className="text-xs text-gray-400">{new Date(o.createdAt).toLocaleString("de-DE")}</div>
+                    </div>
+                    <div className="text-right">
+                      <div className="font-bold text-green-400">{o.totalGross.toFixed(2)} €</div>
+                      {o.cashierName && <div className="text-xs text-gray-400">{o.cashierName}</div>}
+                    </div>
+                  </div>
                 </div>
               ))}
             </div>
@@ -373,12 +439,23 @@ export default function AdminPage() {
 
         {activeTab === "users" && session.role === "admin" && (
           <div>
-            <h2 className="text-lg font-bold mb-4">Nutzer</h2>
+            <div className="flex justify-between items-center mb-4">
+              <h2 className="text-lg font-bold">👥 Nutzer</h2>
+              <button onClick={() => { setEditingTenant(null); setTenantForm({ username: "", password: "", expiresAt: "", isActive: true }); setShowTenantForm(true); }} className="px-4 py-2 rounded-xl bg-green-600 hover:bg-green-500 font-bold text-sm">+ Neuer Nutzer</button>
+            </div>
             <div className="space-y-2">
               {tenants.map((t) => (
                 <div key={t.userId} className="bg-gray-800 rounded-xl p-4 border border-gray-700">
-                  <div className="font-bold mb-2">{t.username}</div>
-                  <div className="text-sm text-gray-400">{t.isActive ? "✅ Aktiv" : "⏸️ Inaktiv"} · bis {new Date(t.expiresAt).toLocaleDateString("de-DE")}</div>
+                  <div className="flex items-center justify-between mb-2">
+                    <div>
+                      <div className="font-bold">{t.username}</div>
+                      <div className="text-xs text-gray-400">{t.isActive ? "✅ Aktiv" : "⏸️ Inaktiv"} · bis {new Date(t.expiresAt).toLocaleDateString("de-DE")}</div>
+                    </div>
+                    <div className="flex gap-2">
+                      <button onClick={() => { setEditingTenant(t); setTenantForm({ username: t.username, password: "", expiresAt: t.expiresAt, isActive: t.isActive }); setShowTenantForm(true); }} className="px-3 py-1.5 rounded-lg bg-gray-600 hover:bg-gray-500 text-xs">✏️</button>
+                      <button onClick={() => handleDeleteTenant(t.userId)} className="px-3 py-1.5 rounded-lg bg-red-900/50 hover:bg-red-800/50 text-xs">🗑️</button>
+                    </div>
+                  </div>
                 </div>
               ))}
             </div>
@@ -389,7 +466,7 @@ export default function AdminPage() {
       {/* Drink Form Modal */}
       {showDrinkForm && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
-          <form onSubmit={handleSaveDrink} className="bg-gray-800 rounded-2xl p-6 w-full max-w-md shadow-2xl border border-gray-700">
+          <form onSubmit={handleSaveDrink} className="bg-gray-800 rounded-2xl p-6 w-full max-w-md shadow-2xl border border-gray-700 max-h-[90vh] overflow-y-auto">
             <h2 className="text-xl font-bold mb-4">{editingDrink ? "Getränk bearbeiten" : "Neues Getränk"}</h2>
             <div className="space-y-4">
               <input type="text" value={drinkForm.name} onChange={(e) => setDrinkForm({ ...drinkForm, name: e.target.value })} placeholder="Name" className="w-full px-4 py-2.5 rounded-xl bg-gray-700 text-white border border-gray-600" />
@@ -397,6 +474,23 @@ export default function AdminPage() {
               <input type="number" value={drinkForm.taxRate} onChange={(e) => setDrinkForm({ ...drinkForm, taxRate: e.target.value })} placeholder="MwSt. %" className="w-full px-4 py-2.5 rounded-xl bg-gray-700 text-white border border-gray-600" />
               <input type="text" value={drinkForm.cupSize} onChange={(e) => setDrinkForm({ ...drinkForm, cupSize: e.target.value })} placeholder="Bechergröße (02/04)" className="w-full px-4 py-2.5 rounded-xl bg-gray-700 text-white border border-gray-600" />
               <input type="text" value={drinkForm.group} onChange={(e) => setDrinkForm({ ...drinkForm, group: e.target.value })} placeholder="Gruppe" className="w-full px-4 py-2.5 rounded-xl bg-gray-700 text-white border border-gray-600" />
+              <div>
+                <label className="block text-sm text-gray-400 mb-2">Verfügbar an Verkaufsstellen:</label>
+                <div className="space-y-1 max-h-32 overflow-y-auto">
+                  {salesPoints.map((sp) => (
+                    <label key={sp.id} className="flex items-center gap-2">
+                      <input type="checkbox" checked={drinkForm.salesPointIds.includes(sp.id)} onChange={(e) => {
+                        if (e.target.checked) {
+                          setDrinkForm({ ...drinkForm, salesPointIds: [...drinkForm.salesPointIds, sp.id] });
+                        } else {
+                          setDrinkForm({ ...drinkForm, salesPointIds: drinkForm.salesPointIds.filter((id) => id !== sp.id) });
+                        }
+                      }} className="w-4 h-4" />
+                      <span>{sp.name}</span>
+                    </label>
+                  ))}
+                </div>
+              </div>
               <label className="flex items-center gap-2">
                 <input type="checkbox" checked={drinkForm.hasDeposit} onChange={(e) => setDrinkForm({ ...drinkForm, hasDeposit: e.target.checked })} className="w-4 h-4" />
                 <span>Pfand</span>
@@ -417,13 +511,30 @@ export default function AdminPage() {
       {/* Food Form Modal */}
       {showFoodForm && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
-          <form onSubmit={handleSaveFood} className="bg-gray-800 rounded-2xl p-6 w-full max-w-md shadow-2xl border border-gray-700">
+          <form onSubmit={handleSaveFood} className="bg-gray-800 rounded-2xl p-6 w-full max-w-md shadow-2xl border border-gray-700 max-h-[90vh] overflow-y-auto">
             <h2 className="text-xl font-bold mb-4">{editingFood ? "Speise bearbeiten" : "Neue Speise"}</h2>
             <div className="space-y-4">
               <input type="text" value={foodForm.name} onChange={(e) => setFoodForm({ ...foodForm, name: e.target.value })} placeholder="Name" className="w-full px-4 py-2.5 rounded-xl bg-gray-700 text-white border border-gray-600" />
               <input type="number" step="0.01" value={foodForm.priceGross} onChange={(e) => setFoodForm({ ...foodForm, priceGross: e.target.value })} placeholder="Bruttopreis" className="w-full px-4 py-2.5 rounded-xl bg-gray-700 text-white border border-gray-600" />
               <input type="number" value={foodForm.taxRate} onChange={(e) => setFoodForm({ ...foodForm, taxRate: e.target.value })} placeholder="MwSt. %" className="w-full px-4 py-2.5 rounded-xl bg-gray-700 text-white border border-gray-600" />
               <input type="text" value={foodForm.group} onChange={(e) => setFoodForm({ ...foodForm, group: e.target.value })} placeholder="Gruppe" className="w-full px-4 py-2.5 rounded-xl bg-gray-700 text-white border border-gray-600" />
+              <div>
+                <label className="block text-sm text-gray-400 mb-2">Verfügbar an Verkaufsstellen:</label>
+                <div className="space-y-1 max-h-32 overflow-y-auto">
+                  {salesPoints.map((sp) => (
+                    <label key={sp.id} className="flex items-center gap-2">
+                      <input type="checkbox" checked={foodForm.salesPointIds.includes(sp.id)} onChange={(e) => {
+                        if (e.target.checked) {
+                          setFoodForm({ ...foodForm, salesPointIds: [...foodForm.salesPointIds, sp.id] });
+                        } else {
+                          setFoodForm({ ...foodForm, salesPointIds: foodForm.salesPointIds.filter((id) => id !== sp.id) });
+                        }
+                      }} className="w-4 h-4" />
+                      <span>{sp.name}</span>
+                    </label>
+                  ))}
+                </div>
+              </div>
               <label className="flex items-center gap-2">
                 <input type="checkbox" checked={foodForm.isCookItem} onChange={(e) => setFoodForm({ ...foodForm, isCookItem: e.target.checked })} className="w-4 h-4" />
                 <span>Kochartikel</span>
@@ -442,7 +553,8 @@ export default function AdminPage() {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
           <form onSubmit={handleSaveSP} className="bg-gray-800 rounded-2xl p-6 w-full max-w-sm shadow-2xl border border-gray-700">
             <h2 className="text-xl font-bold mb-4">{editingSP ? "Bearbeiten" : "Neue Verkaufsstelle"}</h2>
-            <input type="text" value={spForm.name} onChange={(e) => setSpForm({ name: e.target.value })} placeholder="Name" className="w-full px-4 py-2.5 rounded-xl bg-gray-700 text-white border border-gray-600 mb-4" />
+            <input type="text" value={spForm.name} onChange={(e) => setSpForm({ ...spForm, name: e.target.value })} placeholder="Name" className="w-full px-4 py-2.5 rounded-xl bg-gray-700 text-white border border-gray-600 mb-4" />
+            <input type="number" value={spForm.sortOrder} onChange={(e) => setSpForm({ ...spForm, sortOrder: e.target.value })} placeholder="Sortierung" className="w-full px-4 py-2.5 rounded-xl bg-gray-700 text-white border border-gray-600 mb-4" />
             <div className="flex gap-3">
               <button type="button" onClick={() => setShowSPForm(false)} className="flex-1 py-3 rounded-xl font-bold bg-gray-600">Abbrechen</button>
               <button type="submit" className="flex-1 py-3 rounded-xl font-bold bg-green-600">Speichern</button>
@@ -485,12 +597,40 @@ export default function AdminPage() {
                   <option key={i.id} value={i.id}>{i.name}</option>
                 ))}
               </select>
-              <input type="time" value={reductionForm.startTime} onChange={(e) => setReductionForm({ ...reductionForm, startTime: e.target.value })} className="w-full px-4 py-2.5 rounded-xl bg-gray-700 text-white border border-gray-600" />
-              <input type="time" value={reductionForm.endTime} onChange={(e) => setReductionForm({ ...reductionForm, endTime: e.target.value })} className="w-full px-4 py-2.5 rounded-xl bg-gray-700 text-white border border-gray-600" />
+              <div>
+                <label className="block text-sm text-gray-400 mb-1">Startzeit (DE)</label>
+                <input type="time" value={reductionForm.startTime} onChange={(e) => setReductionForm({ ...reductionForm, startTime: e.target.value })} className="w-full px-4 py-2.5 rounded-xl bg-gray-700 text-white border border-gray-600" />
+              </div>
+              <div>
+                <label className="block text-sm text-gray-400 mb-1">Endzeit (DE)</label>
+                <input type="time" value={reductionForm.endTime} onChange={(e) => setReductionForm({ ...reductionForm, endTime: e.target.value })} className="w-full px-4 py-2.5 rounded-xl bg-gray-700 text-white border border-gray-600" />
+              </div>
               <input type="number" min="0" max="100" value={reductionForm.reductionPercent} onChange={(e) => setReductionForm({ ...reductionForm, reductionPercent: parseFloat(e.target.value) })} placeholder="Rabatt %" className="w-full px-4 py-2.5 rounded-xl bg-gray-700 text-white border border-gray-600" />
             </div>
             <div className="flex gap-3 mt-6">
               <button type="button" onClick={() => setShowReductionForm(false)} className="flex-1 py-3 rounded-xl font-bold bg-gray-600">Abbrechen</button>
+              <button type="submit" className="flex-1 py-3 rounded-xl font-bold bg-green-600">Speichern</button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {/* Tenant Form Modal */}
+      {showTenantForm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
+          <form onSubmit={handleSaveTenant} className="bg-gray-800 rounded-2xl p-6 w-full max-w-sm shadow-2xl border border-gray-700">
+            <h2 className="text-xl font-bold mb-4">{editingTenant ? "Nutzer bearbeiten" : "Neuer Nutzer"}</h2>
+            <div className="space-y-4">
+              <input type="text" value={tenantForm.username} onChange={(e) => setTenantForm({ ...tenantForm, username: e.target.value })} placeholder="Benutzername" className="w-full px-4 py-2.5 rounded-xl bg-gray-700 text-white border border-gray-600" />
+              <input type="password" value={tenantForm.password} onChange={(e) => setTenantForm({ ...tenantForm, password: e.target.value })} placeholder={editingTenant ? "Passwort leer = nicht ändern" : "Passwort"} className="w-full px-4 py-2.5 rounded-xl bg-gray-700 text-white border border-gray-600" />
+              <input type="datetime-local" value={tenantForm.expiresAt} onChange={(e) => setTenantForm({ ...tenantForm, expiresAt: e.target.value })} placeholder="Ablaufdatum" className="w-full px-4 py-2.5 rounded-xl bg-gray-700 text-white border border-gray-600" />
+              <label className="flex items-center gap-2">
+                <input type="checkbox" checked={tenantForm.isActive} onChange={(e) => setTenantForm({ ...tenantForm, isActive: e.target.checked })} className="w-4 h-4" />
+                <span>Aktiv</span>
+              </label>
+            </div>
+            <div className="flex gap-3 mt-6">
+              <button type="button" onClick={() => setShowTenantForm(false)} className="flex-1 py-3 rounded-xl font-bold bg-gray-600">Abbrechen</button>
               <button type="submit" className="flex-1 py-3 rounded-xl font-bold bg-green-600">Speichern</button>
             </div>
           </form>
