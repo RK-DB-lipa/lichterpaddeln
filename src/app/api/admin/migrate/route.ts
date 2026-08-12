@@ -127,6 +127,20 @@ const STATEMENTS = [
     created_at timestamp NOT NULL DEFAULT now()
   )`,
   `CREATE UNIQUE INDEX IF NOT EXISTS employee_aliases_tenant_name_idx ON employee_aliases (tenant_id, alias_name)`,
+
+  // --- NEU: Zeitgesteuerte Preisreduktionen ---
+  `CREATE TABLE IF NOT EXISTS price_reductions (
+    id serial PRIMARY KEY,
+    tenant_id integer NOT NULL DEFAULT 0,
+    item_id integer NOT NULL,
+    item_type varchar(10) NOT NULL,
+    start_time varchar(5) NOT NULL,
+    end_time varchar(5) NOT NULL,
+    reduction_percent real NOT NULL,
+    is_active boolean NOT NULL DEFAULT true,
+    created_at timestamp NOT NULL DEFAULT now()
+  )`,
+  `CREATE INDEX IF NOT EXISTS price_reductions_tenant_item_idx ON price_reductions (tenant_id, item_id, item_type)`,
 ];
 
 export async function POST() {
