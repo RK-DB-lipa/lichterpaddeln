@@ -3,8 +3,9 @@ import { db } from "@/db";
 import { foods } from "@/db/schema";
 import { getSession, getAuthAdmin } from "@/lib/auth";
 import { eq, and, sql } from "drizzle-orm";
+import { getReducedPrice } from "@/lib/priceReduction";
 
-// GET: Liefert aktive Foods für den aktuellen Tenant
+// GET: Liefert aktive Foods für den aktuellen Tenant + reduzierte Preise
 export async function GET() {
   try {
     const session = await getSession();
@@ -17,7 +18,25 @@ export async function GET() {
       .where(and(eq(foods.tenantId, tenantId), eq(foods.isActive, true)))
       .orderBy(foods.sortOrder);
 
-    return NextResponse.json(activeFoods);
+    // Berechne reduzierte Preise für alle Foods
+    const result = [];
+    for (const f of activeFoods) {
+      const { reducedPrice, reductionPercent, isActive } = await getReducedPrice(
+        tenantId,
+        f.id,
+        "food",
+        f.priceGross
+      );
+      
+      result.push({
+        ...f,
+        reducedPrice: reducedPrice,
+        reductionPercent: reductionPercent,
+        hasReduction: isActive,
+      });
+    }
+
+    return NextResponse.json(result);
   } catch (error) {
     console.error("GET /api/foods error:", error);
     return NextResponse.json({ error: "Interner Serverfehler" }, { status: 500 });
