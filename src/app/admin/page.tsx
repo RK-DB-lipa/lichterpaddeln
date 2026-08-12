@@ -2,8 +2,9 @@
 
 import { useState, useEffect, useCallback } from "react";
 
-type Drink = { id: number; name: string; priceGross: number; taxRate: number; hasDeposit: boolean; depositAmount: number; cupSize: string; color: string; imageUrl: string | null; isActive: boolean; sortOrder: number; isPourDrink: boolean; salesPointIds?: number[]; group?: string | null; };
-type Food = { id: number; name: string; priceGross: number; taxRate: number; color: string; imageUrl: string | null; isActive: boolean; isCookItem: boolean; sortOrder: number; group?: string | null; };
+type Drink = { id: number; name: string; priceGross: number; taxRate: number; hasDeposit: boolean; depositAmount: number; cupSize: string; color: string; imageUrl: string | null; isActive: boolean; sortOrder: number; isPourDrink: boolean; salesPointIds?: number[]; group?: string | null; reducedPrice?: number; reductionPercent?: number; hasReduction?: boolean; };
+type Food = { id: number; name: string; priceGross: number; taxRate: number; color: string; imageUrl: string | null; isActive: boolean; isCookItem: boolean; sortOrder: number; group?: string | null; reducedPrice?: number; reductionPercent?: number; hasReduction?: boolean; };
+type PriceReduction = { id: number; itemId: number; itemType: "drink" | "food"; startTime: string; endTime: string; reductionPercent: number; isActive: boolean; };
 type Event = { id: number; name: string; startDate: string; endDate: string; isActive: boolean; drinkCount: number; foodCount: number; };
 type SalesPoint = { id: number; name: string; isActive: boolean; sortOrder: number; };
 type OrderItemSummary = { drinkName: string; totalQuantity: number; totalGross: number; totalDeposit: number; };
@@ -86,6 +87,12 @@ export default function AdminPage() {
   const [aliasTargetEmployee, setAliasTargetEmployee] = useState<any>(null);
   const [aliasName, setAliasName] = useState("");
 
+  // Preisreduktionen
+  const [priceReductions, setPriceReductions] = useState<PriceReduction[]>([]);
+  const [showReductionForm, setShowReductionForm] = useState(false);
+  const [editingReduction, setEditingReduction] = useState<PriceReduction | null>(null);
+  const [reductionFormData, setReductionFormData] = useState({ itemId: 0, itemType: "drink" as "drink" | "food", startTime: "22:00", endTime: "02:00", reductionPercent: 20 });
+
   const isSuperAdmin = session?.role === "admin" && session?.username === "admin";
 
   const checkAuth = useCallback(async () => {
@@ -106,6 +113,9 @@ export default function AdminPage() {
   }, []);
   const fetchEmployees = useCallback(async () => {
     try { const r = await fetch("/api/employees"); if (r.ok) setEmployees(await r.json()); } catch (err) { console.error(err); }
+  }, []);
+  const fetchPriceReductions = useCallback(async () => {
+    try { const r = await fetch("/api/price-reductions"); if (r.ok) setPriceReductions(await r.json()); } catch (err) { console.error(err); }
   }, []);
   const fetchSalesPoints = useCallback(async () => {
     try { const r = await fetch("/api/sales-points"); if (r.ok) setSalesPoints(await r.json()); } catch (err) { console.error(err); }
@@ -156,7 +166,7 @@ export default function AdminPage() {
   }, []);
 
   useEffect(() => { checkAuth(); }, [checkAuth]);
-  useEffect(() => { if (session) { fetchDrinks(); fetchGroups(); fetchFoods(); fetchEvents(); fetchEmployees(); fetchSalesPoints(); fetchOrders(); fetchPourStats(); fetchCupCounters(); fetchNames(); } }, [session, fetchDrinks, fetchGroups, fetchFoods, fetchEvents, fetchEmployees, fetchSalesPoints, fetchOrders, fetchPourStats, fetchCupCounters, fetchNames]);
+  useEffect(() => { if (session) { fetchDrinks(); fetchGroups(); fetchFoods(); fetchEvents(); fetchEmployees(); fetchPriceReductions(); fetchSalesPoints(); fetchOrders(); fetchPourStats(); fetchCupCounters(); fetchNames(); } }, [session, fetchDrinks, fetchGroups, fetchFoods, fetchEvents, fetchEmployees, fetchPriceReductions, fetchSalesPoints, fetchOrders, fetchPourStats, fetchCupCounters, fetchNames]);
   useEffect(() => { if (activeTab === "users" && isSuperAdmin && tenants.length === 0) fetchTenants(); }, [activeTab, isSuperAdmin]);
 
   async function handleLogin(e: React.FormEvent) {
@@ -227,6 +237,36 @@ export default function AdminPage() {
       await api(`/api/employees/aliases?id=${aliasId}`, "DELETE");
       fetchEmployees();
     } catch (err: any) { alert(err.message || "Fehler beim Entfernen"); }
+  }
+
+  // Preisreduktionen Handler
+  async function handleSaveReduction(e: React.FormEvent) {
+    e.preventDefault();
+    try {
+      if (editingReduction) {
+        await api(`/api/price-reductions/${editingReduction.id}`, "PUT", reductionFormData);
+      } else {
+        await api("/api/price-reductions", "POST", reductionFormData);
+      }
+      setShowReductionForm(false);
+      setEditingReduction(null);
+      fetchPriceReductions();
+    } catch (err: any) { alert(err.message || "Fehler beim Speichern"); }
+  }
+
+  async function handleDeleteReduction(id: number) {
+    if (!confirm("Preisreduktion wirklich löschen?")) return;
+    try {
+      await api(`/api/price-reductions/${id}`, "DELETE");
+      fetchPriceReductions();
+    } catch (err: any) { alert(err.message || "Fehler beim Löschen"); }
+  }
+
+  async function handleToggleReduction(id: number, isActive: boolean) {
+    try {
+      await api(`/api/price-reductions/${id}`, "PUT", { isActive: !isActive });
+      fetchPriceReductions();
+    } catch (err: any) { alert(err.message || "Fehler beim Umschalten"); }
   }
 
   // Food handlers
@@ -364,7 +404,7 @@ export default function AdminPage() {
       </header>
 
       <div className="flex border-b border-gray-700 shrink-0">
-        {[["drinks","🍺 Getränke"],["foods","🍔 Speisen"],["salesPoints","🏪 Verkaufsstellen"],["events","📅 Events"],["cups","🥤 Becher"],["orders","📊 Bestellungen"],["employees","👤 Mitarbeiter"],...(isSuperAdmin ? [["users","👥 Nutzer"],["super","🔐 Super-Admin"]] : [["users","👥 Nutzer"]])].map(([tab,label]) => (
+        {[["drinks","🍺 Getränke"],["foods","🍔 Speisen"],["salesPoints","🏪 Verkaufsstellen"],["events","📅 Events"],["reductions","💰 Preisaktionen"],["cups","🥤 Becher"],["orders","📊 Bestellungen"],["employees","👤 Mitarbeiter"],...(isSuperAdmin ? [["users","👥 Nutzer"],["super","🔐 Super-Admin"]] : [["users","👥 Nutzer"]])].map(([tab,label]) => (
           <button key={tab} onClick={() => setActiveTab(tab)} className={`flex-1 py-3 text-center font-bold text-sm ${activeTab === tab ? "border-b-2 border-amber-500 text-amber-400" : "text-gray-400"}`}>{label}</button>
         ))}
       </div>
@@ -621,6 +661,46 @@ export default function AdminPage() {
                 </div>
               </button>
             ))}
+          </div>
+        )}
+
+        {/* PRICE REDUCTIONS TAB */}
+        {activeTab === "reductions" && (
+          <div>
+            <div className="flex justify-between items-center mb-4">
+              <h2 className="text-lg font-bold">💰 Zeitgesteuerte Preisaktionen</h2>
+              <button onClick={() => { setEditingReduction(null); setReductionFormData({ itemId: 0, itemType: "drink", startTime: "22:00", endTime: "02:00", reductionPercent: 20 }); setShowReductionForm(true); }} className="px-4 py-2 rounded-xl bg-green-600 hover:bg-green-500 font-bold text-sm">+ Neue Aktion</button>
+            </div>
+            <p className="text-xs text-gray-400 mb-4">Definiere zeitbasierte Preisreduktionen für Getränke und Speisen. Die Preise werden automatisch zur eingestellten Zeit reduziert.</p>
+            <div className="space-y-2">
+              {priceReductions.map((red) => {
+                const item = red.itemType === "drink" 
+                  ? drinks.find(d => d.id === red.itemId)
+                  : foods.find(f => f.id === red.itemId);
+                return (
+                  <div key={red.id} className="bg-gray-800 rounded-xl p-4 border border-gray-700">
+                    <div className="flex items-center justify-between mb-2">
+                      <div>
+                        <div className="font-bold text-base">
+                          {item ? (item as any).name : "Unbekannt"} ({red.itemType === "drink" ? "🍺" : "🍔"})
+                        </div>
+                        <div className="text-sm text-gray-400">
+                          {red.startTime} - {red.endTime} Uhr · {red.reductionPercent}% Rabatt
+                        </div>
+                      </div>
+                      <div className="flex gap-2">
+                        <button onClick={() => handleToggleReduction(red.id, red.isActive)} className={`px-3 py-1.5 rounded-lg text-xs font-bold ${red.isActive ? "bg-green-700 hover:bg-green-600" : "bg-gray-600 hover:bg-gray-500"}`}>
+                          {red.isActive ? "✅ Aktiv" : "⏸️ Inaktiv"}
+                        </button>
+                        <button onClick={() => { setEditingReduction(red); setReductionFormData({ itemId: red.itemId, itemType: red.itemType, startTime: red.startTime, endTime: red.endTime, reductionPercent: red.reductionPercent }); setShowReductionForm(true); }} className="px-3 py-1.5 rounded-lg bg-blue-700 hover:bg-blue-600 text-xs font-bold">✏️</button>
+                        <button onClick={() => handleDeleteReduction(red.id)} className="px-3 py-1.5 rounded-lg bg-red-900/50 hover:bg-red-800/50 text-xs font-bold">🗑️</button>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+              {priceReductions.length === 0 && <p className="text-gray-500 text-center py-8">Noch keine Preisaktionen angelegt.</p>}
+            </div>
           </div>
         )}
 
@@ -1068,6 +1148,52 @@ function PasswordModal({user,value,onChange,onSubmit,onClose}:any){return(
     <div className="flex gap-3"><button type="button" onClick={onClose} className="flex-1 py-3 rounded-xl font-bold bg-gray-600">Abbrechen</button><button type="submit" className="flex-1 py-3 rounded-xl font-bold bg-amber-600">Speichern</button></div>
   </form></div>
   );}
+
+{/* Price Reduction Form Modal */}
+{showReductionForm && (
+  <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
+    <form onSubmit={handleSaveReduction} className="bg-gray-800 rounded-2xl p-6 w-full max-w-md shadow-2xl border border-gray-700">
+      <h2 className="text-xl font-bold mb-4">{editingReduction ? "Preisaktion bearbeiten" : "Neue Preisaktion"}</h2>
+      <div className="space-y-4">
+        <div>
+          <label className="block text-sm text-gray-400 mb-1">Typ</label>
+          <select value={reductionFormData.itemType} onChange={(e) => setReductionFormData({ ...reductionFormData, itemType: e.target.value as "drink" | "food" })} className="w-full px-4 py-2.5 rounded-xl bg-gray-700 text-white border border-gray-600 focus:border-blue-500 focus:outline-none">
+            <option value="drink">🍺 Getränk</option>
+            <option value="food">🍔 Speise</option>
+          </select>
+        </div>
+        <div>
+          <label className="block text-sm text-gray-400 mb-1">{reductionFormData.itemType === "drink" ? "Getränk" : "Speise"}</label>
+          <select value={reductionFormData.itemId} onChange={(e) => setReductionFormData({ ...reductionFormData, itemId: parseInt(e.target.value) })} className="w-full px-4 py-2.5 rounded-xl bg-gray-700 text-white border border-gray-600 focus:border-blue-500 focus:outline-none">
+            <option value={0}>Bitte wählen...</option>
+            {(reductionFormData.itemType === "drink" ? drinks : foods).map((item) => (
+              <option key={item.id} value={item.id}>{item.name} ({item.priceGross.toFixed(2)} €)</option>
+            ))}
+          </select>
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className="block text-sm text-gray-400 mb-1">Startzeit (HH:MM)</label>
+            <input type="time" value={reductionFormData.startTime} onChange={(e) => setReductionFormData({ ...reductionFormData, startTime: e.target.value })} className="w-full px-4 py-2.5 rounded-xl bg-gray-700 text-white border border-gray-600 focus:border-blue-500 focus:outline-none" />
+          </div>
+          <div>
+            <label className="block text-sm text-gray-400 mb-1">Endzeit (HH:MM)</label>
+            <input type="time" value={reductionFormData.endTime} onChange={(e) => setReductionFormData({ ...reductionFormData, endTime: e.target.value })} className="w-full px-4 py-2.5 rounded-xl bg-gray-700 text-white border border-gray-600 focus:border-blue-500 focus:outline-none" />
+          </div>
+        </div>
+        <div>
+          <label className="block text-sm text-gray-400 mb-1">Rabatt in %</label>
+          <input type="number" min="0" max="100" value={reductionFormData.reductionPercent} onChange={(e) => setReductionFormData({ ...reductionFormData, reductionPercent: parseFloat(e.target.value) })} className="w-full px-4 py-2.5 rounded-xl bg-gray-700 text-white border border-gray-600 focus:border-blue-500 focus:outline-none" />
+          <p className="text-xs text-gray-500 mt-1">z.B. 20 für 20% Rabatt</p>
+        </div>
+      </div>
+      <div className="flex gap-3 mt-6">
+        <button type="button" onClick={() => { setShowReductionForm(false); setEditingReduction(null); }} className="flex-1 py-3 rounded-xl font-bold bg-gray-600 hover:bg-gray-500">Abbrechen</button>
+        <button type="submit" className="flex-1 py-3 rounded-xl font-bold bg-green-600 hover:bg-green-500">Speichern</button>
+      </div>
+    </form>
+  </div>
+)}
 
 function PasswordChangeModal({isAdmin, targetUserId, targetUsername, onClose}: any) {
   const [newPassword, setNewPassword] = useState("");
