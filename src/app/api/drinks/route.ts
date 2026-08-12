@@ -31,7 +31,7 @@ export async function GET(req: NextRequest) {
     }
 
     // Berechne reduzierte Preise für alle Drinks
-    const result = [];
+    let result = [];
     for (const d of activeDrinks) {
       const { reducedPrice, reductionPercent, isActive } = await getReducedPrice(
         tenantId,
