@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 
-type Food = { id: number; name: string; priceGross: number; taxRate: number; color: string; imageUrl: string | null; isCookItem: boolean; group?: string | null; };
+type Food = { id: number; name: string; priceGross: number; taxRate: number; color: string; imageUrl: string | null; isCookItem: boolean; group?: string | null; reducedPrice?: number; reductionPercent?: number; hasReduction?: boolean; };
 type QueueItem = { id: number; foodName: string; quantity: number; };
 type StatItem = { foodName: string; totalCooked: number; };
 
