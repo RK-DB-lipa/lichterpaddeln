@@ -190,4 +190,17 @@ export const orderFoodItems = pgTable("order_food_items", {
   totalPriceGross: real("total_price_gross").notNull(),
 });
 
+// Time-based price reductions for drinks and foods
+export const priceReductions = pgTable("price_reductions", {
+  id: serial("id").primaryKey(),
+  tenantId: integer("tenant_id").notNull().default(0),
+  itemId: integer("item_id").notNull(), // drink.id or food.id
+  itemType: varchar("item_type", { length: 10 }).notNull(), // "drink" or "food"
+  startTime: varchar("start_time", { length: 5 }).notNull(), // "HH:MM" format
+  endTime: varchar("end_time", { length: 5 }).notNull(), // "HH:MM" format, can be next day
+  reductionPercent: real("reduction_percent").notNull(), // e.g., 20 for 20%
+  isActive: boolean("is_active").notNull().default(true),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
 export type DrinkSummary = { drinkId: number; drinkName: string; totalQuantity: number; totalGross: number; totalDeposit: number; };
