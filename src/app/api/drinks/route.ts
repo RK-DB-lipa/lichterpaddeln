@@ -3,8 +3,9 @@ import { db } from "@/db";
 import { drinks, drinkSalesPoints, salesPoints } from "@/db/schema";
 import { getSession, getAuthAdmin } from "@/lib/auth";
 import { eq, and, sql } from "drizzle-orm";
+import { getReducedPrice } from "@/lib/priceReduction";
 
-// GET: Liefert aktive Getränke + Verkaufsstellen-Zuordnung
+// GET: Liefert aktive Getränke + Verkaufsstellen-Zuordnung + reduzierte Preise
 export async function GET(req: NextRequest) {
   try {
     const session = await getSession();
@@ -29,7 +30,25 @@ export async function GET(req: NextRequest) {
       spByDrink.get(a.drinkId)!.push(a.salesPointId);
     }
 
-    let result = activeDrinks.map((d) => ({ ...d, salesPointIds: spByDrink.get(d.id) || [] }));
+    // Berechne reduzierte Preise für alle Drinks
+    const result = [];
+    for (const d of activeDrinks) {
+      const { reducedPrice, reductionPercent, isActive } = await getReducedPrice(
+        tenantId,
+        d.id,
+        "drink",
+        d.priceGross
+      );
+      
+      result.push({
+        ...d,
+        priceGross: d.priceGross,
+        reducedPrice: reducedPrice,
+        reductionPercent: reductionPercent,
+        hasReduction: isActive,
+        salesPointIds: spByDrink.get(d.id) || [],
+      });
+    }
 
     if (salesPointId) {
       const spId = parseInt(salesPointId);
