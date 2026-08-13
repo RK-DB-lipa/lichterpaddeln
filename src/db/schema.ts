@@ -77,6 +77,9 @@ export const orders = pgTable("orders", {
   totalDeposit: real("total_deposit").notNull(),
   totalDepositReturned: real("total_deposit_returned").notNull(),
   netDeposit: real("net_deposit").notNull(),
+  // ✅ NEU: Aufschlüsselung nach Bechergröße
+  depositReturned02: integer("deposit_returned_02").notNull().default(0),
+  depositReturned04: integer("deposit_returned_04").notNull().default(0),
   cashierName: varchar("cashier_name", { length: 200 }).default(""),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
