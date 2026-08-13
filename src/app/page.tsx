@@ -50,6 +50,10 @@ export default function POSPage() {
   const receiptRef = useRef<HTMLDivElement>(null);
   const wakeLockRef = useRef<any>(null);
 
+  // ✅ items und foodItems HIER deklarieren (vor allen useCallback-Funktionen)
+  const items = Array.from(orderItems.values());
+  const foodItems = Array.from(orderFoodItems.values());
+
   useEffect(() => { checkAuth(); }, []);
   async function checkAuth() { try { const r = await fetch("/api/auth/me"); setSession(r.ok ? await r.json() : null); } catch { setSession(null); } }
   async function handleLogin(e: React.FormEvent) {
@@ -159,7 +163,6 @@ export default function POSPage() {
     }
   }, [removeItem]);
 
-  // ✅ FIX 2: Stornierung sendet Cancel an Zapf-Ansicht
   const cancelOrder = useCallback(async () => {
     if (pourSent && selectedSalesPointId) {
       const pourItems = items.filter((i) => drinks.find((d) => d.id === i.drinkId)?.isPourDrink);
@@ -187,9 +190,6 @@ export default function POSPage() {
     setRemoveMode(false);
     setShowCancelConfirm(false);
   }, [items, drinks, selectedSalesPointId, pourSent]);
-
-  const items = Array.from(orderItems.values());
-  const foodItems = Array.from(orderFoodItems.values());
 
   const toCents = (euros: number) => Math.round(euros * 100);
   const toEuros = (cents: number) => +(cents / 100).toFixed(2);
@@ -224,7 +224,6 @@ export default function POSPage() {
     try { const r = await fetch("/api/pour/queue", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ salesPointId: selectedSalesPointId, items: pourItems }) }); if (r.ok) setPourSent(true); } catch (err) { console.error(err); }
   }, [items, drinks, selectedSalesPointId, pourSent]);
 
-  // ✅ FIX 3: Pflichtfeld "An Zapfanlage senden"
   const handleReset = useCallback(async () => {
     if (!selectedSalesPointId) return;
     
@@ -357,7 +356,6 @@ export default function POSPage() {
         <main className="flex-1 overflow-y-auto p-1.5 md:p-2 relative">
           {removeMode && <div className="bg-red-700/60 border border-red-500 rounded-lg px-2 py-1 mb-1.5 text-xs font-bold text-center animate-pulse">⚡ Entfernen-Modus aktiv – Tippe auf Artikel zum Reduzieren</div>}
 
-          {/* Tab-Auswahl */}
           {drinks.length > 0 && foods.length > 0 && (
             <div className="flex gap-2 mb-2">
               <button onClick={() => setActiveTab("drinks")} className={`flex-1 py-2 rounded-lg font-bold text-sm transition-all ${activeTab === "drinks" ? "bg-blue-600 text-white" : "bg-gray-700 text-gray-300 hover:bg-gray-600"}`}>🍺 Getränke ({drinks.length})</button>
@@ -386,7 +384,6 @@ export default function POSPage() {
                           <span className="h-px flex-1 bg-gray-600" />
                         </div>
                       )}
-                      {/* ✅ FIX 1: Entfernen-Modus subtrahiert */}
                       <button 
                         onClick={() => {
                           if (removeMode) {
@@ -435,7 +432,6 @@ export default function POSPage() {
               {foods.map((food) => {
                 const count = orderFoodItems.get(food.id)?.quantity || 0;
                 return (
-                  // ✅ FIX 1: Entfernen-Modus subtrahiert auch bei Speisen
                   <button 
                     key={food.id} 
                     onClick={() => {
@@ -515,7 +511,6 @@ export default function POSPage() {
         )}
       </div>
 
-      {/* ✅ FIX 4: Bestellungs-Abschluss Modal ist jetzt Fullscreen mit höherem z-index */}
       {showResetConfirm && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/90 p-4">
           <div className="bg-gray-800 rounded-2xl p-5 max-w-sm w-full shadow-2xl border border-gray-600">
@@ -533,7 +528,6 @@ export default function POSPage() {
               <p className="text-xs text-gray-400">{totalDrinksCount} Getränke · {totalFoodsCount} Speisen · {items.length + foodItems.length} Positionen</p>
             </div>
             
-            {/* ✅ FIX 3: Pflichtfeld - Warnung wenn Zapf-Drinks nicht gesendet wurden */}
             {hasPourDrinks && !pourSent && (
               <div className="mb-3 bg-red-900/40 border border-red-500 rounded-lg p-2 text-center">
                 <p className="text-xs text-red-300 font-bold">⚠️ {pourItemCount} Zapf-Getränk(e) noch nicht an die Zapfanlage gesendet!</p>
@@ -599,7 +593,6 @@ export default function POSPage() {
       
       {showCalculator && <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/70 p-4"><CalculatorModal total={grandTotal} onClose={() => setShowCalculator(false)} /></div>}
       
-      {/* ✅ FIX 4: Erfolgs-Modal ist jetzt Fullscreen */}
       {showSuccess && lastOrder && !handout && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 pointer-events-none">
           <div className="bg-green-700 text-white px-8 py-6 rounded-2xl shadow-2xl font-bold text-xl animate-bounce text-center">
@@ -609,7 +602,6 @@ export default function POSPage() {
         </div>
       )}
       
-      {/* ✅ FIX 4: Handout-Modal ist jetzt Fullscreen */}
       {handout && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-gray-900/98 p-4">
           <div className="bg-gray-800 rounded-2xl w-full max-w-md shadow-2xl border border-gray-600 max-h-[92vh] flex flex-col">
