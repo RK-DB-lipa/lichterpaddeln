@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
 import { foodStats } from "@/db/schema";
 import { getSession } from "@/lib/auth";
-import { eq, sql, desc } from "drizzle-orm";
+import { eq, desc } from "drizzle-orm";
 
 export async function GET(req: NextRequest) {
   try {
@@ -10,7 +10,6 @@ export async function GET(req: NextRequest) {
     if (!session) return NextResponse.json({ error: "Nicht autorisiert" }, { status: 401 });
     const tenantId = session.tenantId;
 
-    // ✅ FIX: foodStats hat Spalte "totalCooked", nicht "quantity"
     const stats = await db
       .select({
         foodName: foodStats.foodName,
