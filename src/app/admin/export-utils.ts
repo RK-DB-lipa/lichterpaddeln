@@ -192,7 +192,7 @@ function drawPDFHeader(doc: jsPDF, title: string, subtitle: string): void {
   doc.text(subtitle, pageWidth - 14, 22, { align: "right" });
 }
 
-function drawPDF filters(doc: jsPDF, filters: Record<string, string>, startY: number): number {
+function drawPDFfilters(doc: jsPDF, filters: Record<string, string>, startY: number): number {
   const pageWidth = doc.internal.pageSize.getWidth();
   const activeFilters = Object.entries(filters).filter(([_, v]) => v && v !== "");
   
