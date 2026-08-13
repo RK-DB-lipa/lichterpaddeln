@@ -35,12 +35,27 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // Stats erhöhen
-    await db.insert(foodStats).values({
-      tenantId,
-      foodName,
-      quantity: 1,
-    });
+    // ✅ FIX: Stats erhöhen - foodStats hat Spalte "totalCooked", nicht "quantity"
+    const existingStats = await db
+      .select()
+      .from(foodStats)
+      .where(and(eq(foodStats.tenantId, tenantId), eq(foodStats.foodName, foodName)))
+      .limit(1);
+
+    if (existingStats.length > 0) {
+      // Bestehenden Eintrag updaten
+      await db
+        .update(foodStats)
+        .set({ totalCooked: existingStats[0].totalCooked + 1 })
+        .where(eq(foodStats.id, existingStats[0].id));
+    } else {
+      // Neuen Eintrag erstellen
+      await db.insert(foodStats).values({
+        tenantId,
+        foodName,
+        totalCooked: 1,
+      });
+    }
 
     return NextResponse.json({ success: true });
   } catch (error) {
