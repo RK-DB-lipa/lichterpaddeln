@@ -514,7 +514,7 @@ export default function POSPage() {
       </div>
 
       {showResetConfirm && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/90 p-4">
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/90 p-4">
           <div className="bg-gray-800 rounded-2xl p-5 max-w-sm w-full shadow-2xl border border-gray-600">
             <h2 className="text-lg font-bold mb-2 text-center">⚠️ Bestellung abschließen?</h2>
             <div className="mb-3 bg-gray-700/50 rounded-lg p-2">
@@ -605,7 +605,7 @@ export default function POSPage() {
       )}
       
       {handout && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-gray-900/98 p-4">
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-gray-900/98 p-4">
           <div className="bg-gray-800 rounded-2xl w-full max-w-md shadow-2xl border border-gray-600 max-h-[92vh] flex flex-col">
             <div className="p-4 border-b border-gray-700 shrink-0">
               <h2 className="text-xl font-extrabold text-center">🥤 Ausgabe – Bestellung #{handout.orderId}</h2>
