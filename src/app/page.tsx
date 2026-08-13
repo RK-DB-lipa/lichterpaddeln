@@ -242,6 +242,8 @@ export default function POSPage() {
             items: items.map((i) => ({ drinkId: i.drinkId, quantity: i.quantity })),
             foodItems: foodItems.map((i) => ({ foodId: i.foodId, quantity: i.quantity })),
             depositReturned,
+            depositReturned02, // ✅ NEU
+            depositReturned04, // ✅ NEU
             salesPointId: selectedSalesPointId,
             cashierName
           })
