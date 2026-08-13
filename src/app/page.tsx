@@ -4,11 +4,11 @@ import { useState, useEffect, useCallback, useRef } from "react";
 
 type Drink = { id: number; name: string; priceGross: number; taxRate: number; hasDeposit: boolean; depositAmount: number; cupSize: string; color: string; imageUrl: string | null; isPourDrink: boolean; salesPointIds?: number[]; group?: string | null; reducedPrice?: number; reductionPercent?: number; hasReduction?: boolean; };
 type Food = { id: number; name: string; priceGross: number; taxRate: number; color: string; imageUrl: string | null; isCookItem: boolean; group?: string | null; reducedPrice?: number; reductionPercent?: number; hasReduction?: boolean; };
-type Event = { id: number; name: string; startDate: string; endDate: string; isActive: boolean; drinkCount: number; foodCount: number; };
-type SalesPoint = { id: number; name: string; };
-type OrderItem = { drinkId: number; drinkName: string; quantity: number; unitPriceGross: number; unitDeposit: number; };
-type FoodOrderItem = { foodId: number; foodName: string; quantity: number; unitPriceGross: number; };
-type HandoutState = { orderId: number; salesPointName: string; items: Array<OrderItem & { isPourDrink: boolean }>; foodItems: FoodOrderItem[]; checked: Record<number, boolean>; totalGross: number; depositReturnedCount: number; };
+type Event = { id: number; name: string; startDate: string; endDate: string; isActive: boolean; drinkCount: number; foodCount: number };
+type SalesPoint = { id: number; name: string };
+type OrderItem = { drinkId: number; drinkName: string; quantity: number; unitPriceGross: number; unitDeposit: number };
+type FoodOrderItem = { foodId: number; foodName: string; quantity: number; unitPriceGross: number };
+type HandoutState = { orderId: number; salesPointName: string; items: Array<OrderItem & { isPourDrink: boolean }>; foodItems: FoodOrderItem[]; checked: Record<number, boolean>; totalGross: number; depositReturnedCount: number };
 
 const DEPOSIT_PER_RETURN = 2.0;
 
@@ -110,7 +110,6 @@ export default function POSPage() {
 
   const addDrink = useCallback((drink: Drink) => {
     setPourSent(false);
-    // Verwende reduzierten Preis wenn verfügbar, sonst normalen Preis
     const priceToUse = drink.hasReduction && drink.reducedPrice !== undefined ? drink.reducedPrice : drink.priceGross;
     setOrderItems((prev) => {
       const next = new Map(prev);
@@ -125,7 +124,6 @@ export default function POSPage() {
   }, []);
 
   const addFood = useCallback((food: Food) => {
-    // Verwende reduzierten Preis wenn verfügbar, sonst normalen Preis
     const priceToUse = food.hasReduction && food.reducedPrice !== undefined ? food.reducedPrice : food.priceGross;
     setOrderFoodItems((prev) => {
       const next = new Map(prev);
@@ -161,7 +159,26 @@ export default function POSPage() {
     }
   }, [removeItem]);
 
-  const cancelOrder = useCallback(() => {
+  // ✅ FIX 2: Stornierung sendet Cancel an Zapf-Ansicht
+  const cancelOrder = useCallback(async () => {
+    if (pourSent && selectedSalesPointId) {
+      const pourItems = items.filter((i) => drinks.find((d) => d.id === i.drinkId)?.isPourDrink);
+      if (pourItems.length > 0) {
+        try {
+          await fetch("/api/pour/cancel", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              salesPointId: selectedSalesPointId,
+              items: pourItems.map((i) => ({ drinkName: i.drinkName, quantity: i.quantity }))
+            })
+          });
+        } catch (err) {
+          console.error("Fehler beim Stornieren der Zapf-Queue:", err);
+        }
+      }
+    }
+
     setOrderItems(new Map());
     setOrderFoodItems(new Map());
     setDepositReturned02(0);
@@ -169,12 +186,11 @@ export default function POSPage() {
     setPourSent(false);
     setRemoveMode(false);
     setShowCancelConfirm(false);
-  }, []);
+  }, [items, drinks, selectedSalesPointId, pourSent]);
 
   const items = Array.from(orderItems.values());
   const foodItems = Array.from(orderFoodItems.values());
 
-  // FIX: Korrekte Preis-Kalkulation mit Integer-Cents
   const toCents = (euros: number) => Math.round(euros * 100);
   const toEuros = (cents: number) => +(cents / 100).toFixed(2);
 
@@ -208,16 +224,15 @@ export default function POSPage() {
     try { const r = await fetch("/api/pour/queue", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ salesPointId: selectedSalesPointId, items: pourItems }) }); if (r.ok) setPourSent(true); } catch (err) { console.error(err); }
   }, [items, drinks, selectedSalesPointId, pourSent]);
 
-  const sendToKitchen = useCallback(async () => {
-    if (foodItems.length === 0) return;
-    try {
-      const kitchenItems = foodItems.map((i) => ({ foodName: i.foodName, quantity: i.quantity }));
-      await fetch("/api/food/queue", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ items: kitchenItems }) });
-    } catch (err) { console.error(err); }
-  }, [foodItems]);
-
+  // ✅ FIX 3: Pflichtfeld "An Zapfanlage senden"
   const handleReset = useCallback(async () => {
     if (!selectedSalesPointId) return;
+    
+    if (hasPourDrinks && !pourSent) {
+      alert("⚠️ Bitte erst die Zapf-Getränke an die Zapfanlage senden, bevor du die Bestellung abschließt!");
+      return;
+    }
+
     if (items.length > 0 || foodItems.length > 0) {
       try {
         const cashierName = session?.displayName || session?.username || "";
@@ -246,8 +261,6 @@ export default function POSPage() {
             totalGross: grandTotal,
             depositReturnedCount: depositReturned
           });
-          // Speisen werden automatisch von der Orders API an die Küche gesendet
-          // Kein separater sendToKitchen() Aufruf nötig
         }
       } catch (err) { console.error(err); }
     }
@@ -258,7 +271,7 @@ export default function POSPage() {
     setPourSent(false);
     setRemoveMode(false);
     setShowResetConfirm(false);
-  }, [items, foodItems, depositReturned, grandTotal, selectedSalesPointId, selectedSalesPoint, drinks, session, sendToKitchen]);
+  }, [items, foodItems, depositReturned, grandTotal, selectedSalesPointId, selectedSalesPoint, drinks, session, hasPourDrinks, pourSent]);
 
   const handleDragStart = (e: React.MouseEvent | React.TouchEvent) => { if (!receiptRef.current) return; setIsDragging(true); const cx = "touches" in e ? e.touches[0].clientX : e.clientX; const cy = "touches" in e ? e.touches[0].clientY : e.clientY; const r = receiptRef.current.getBoundingClientRect(); dragOffset.current = { x: cx - r.left, y: cy - r.top }; };
   const handleDragMove = useCallback((e: MouseEvent | TouchEvent) => {
@@ -277,8 +290,9 @@ export default function POSPage() {
   const handleDragEnd = useCallback(() => setIsDragging(false), []);
   useEffect(() => { if (isDragging) { window.addEventListener("mousemove", handleDragMove); window.addEventListener("mouseup", handleDragEnd); window.addEventListener("touchmove", handleDragMove); window.addEventListener("touchend", handleDragEnd); return () => { window.removeEventListener("mousemove", handleDragMove); window.removeEventListener("mouseup", handleDragEnd); window.removeEventListener("touchmove", handleDragMove); window.removeEventListener("touchend", handleDragEnd); }; } }, [isDragging, handleDragMove, handleDragEnd]);
 
-  const handoutCheckedCount = handout ? handout.items.filter((i) => handout.checked[i.drinkId]).length : 0;
-  const handoutAllDone = handout !== null && handoutCheckedCount === handout.items.length;
+  const handoutCheckedCount = handout ? handout.items.filter((i) => handout.checked[i.drinkId]).length + handout.foodItems.filter((i) => handout.checked[-i.foodId]).length : 0;
+  const handoutAllItems = handout ? handout.items.length + handout.foodItems.length : 0;
+  const handoutAllDone = handout !== null && handoutCheckedCount === handoutAllItems;
 
   if (session === undefined) return <div className="h-screen bg-gray-900 flex items-center justify-center text-white"><p>Laden...</p></div>;
 
@@ -341,7 +355,7 @@ export default function POSPage() {
         </aside>
 
         <main className="flex-1 overflow-y-auto p-1.5 md:p-2 relative">
-          {removeMode && <div className="bg-red-700/60 border border-red-500 rounded-lg px-2 py-1 mb-1.5 text-xs font-bold text-center animate-pulse">⚡ Entfernen-Modus aktiv</div>}
+          {removeMode && <div className="bg-red-700/60 border border-red-500 rounded-lg px-2 py-1 mb-1.5 text-xs font-bold text-center animate-pulse">⚡ Entfernen-Modus aktiv – Tippe auf Artikel zum Reduzieren</div>}
 
           {/* Tab-Auswahl */}
           {drinks.length > 0 && foods.length > 0 && (
@@ -372,7 +386,22 @@ export default function POSPage() {
                           <span className="h-px flex-1 bg-gray-600" />
                         </div>
                       )}
-                      <button onClick={() => addDrink(drink)} className={`relative rounded-xl p-2 md:p-3 text-left active:scale-[0.97] transition-all shadow-md border ${removeMode && count > 0 ? "border-red-400 border-2" : "border-white/10 hover:border-white/30"} min-h-[80px] md:min-h-[100px] flex flex-col justify-between`} style={{ backgroundColor: drink.color, backgroundImage: drink.imageUrl ? `linear-gradient(rgba(0,0,0,0.45), rgba(0,0,0,0.65)), url(${drink.imageUrl})` : undefined, backgroundSize: "cover", backgroundPosition: "center" }}>
+                      {/* ✅ FIX 1: Entfernen-Modus subtrahiert */}
+                      <button 
+                        onClick={() => {
+                          if (removeMode) {
+                            const currentCount = orderItems.get(drink.id)?.quantity || 0;
+                            if (currentCount > 0) {
+                              updateItemQuantity("drink", drink.id, currentCount - 1);
+                              setPourSent(false);
+                            }
+                          } else {
+                            addDrink(drink);
+                          }
+                        }} 
+                        className={`relative rounded-xl p-2 md:p-3 text-left active:scale-[0.97] transition-all shadow-md border ${removeMode && count > 0 ? "border-red-400 border-2" : "border-white/10 hover:border-white/30"} min-h-[80px] md:min-h-[100px] flex flex-col justify-between`} 
+                        style={{ backgroundColor: drink.color, backgroundImage: drink.imageUrl ? `linear-gradient(rgba(0,0,0,0.45), rgba(0,0,0,0.65)), url(${drink.imageUrl})` : undefined, backgroundSize: "cover", backgroundPosition: "center" }}
+                      >
                         {count > 0 && <div className="absolute -top-1.5 -right-1.5 bg-white text-gray-900 rounded-full w-6 h-6 md:w-7 md:h-7 flex items-center justify-center font-extrabold text-sm shadow-lg border border-gray-200">{count}</div>}
                         {removeMode && count > 0 && <div className="absolute -top-1.5 -left-1.5 bg-red-500 text-white rounded-full w-5 h-5 flex items-center justify-center font-black text-xs shadow-lg">−</div>}
                         <div className="font-extrabold text-sm md:text-base leading-tight drop-shadow-md">{drink.name}</div>
@@ -406,7 +435,22 @@ export default function POSPage() {
               {foods.map((food) => {
                 const count = orderFoodItems.get(food.id)?.quantity || 0;
                 return (
-                  <button key={food.id} onClick={() => addFood(food)} className={`relative rounded-xl p-2 md:p-3 text-left active:scale-[0.97] transition-all shadow-md border ${removeMode && count > 0 ? "border-red-400 border-2" : "border-white/10 hover:border-white/30"} min-h-[80px] md:min-h-[100px] flex flex-col justify-between`} style={{ backgroundColor: food.color, backgroundImage: food.imageUrl ? `linear-gradient(rgba(0,0,0,0.45), rgba(0,0,0,0.65)), url(${food.imageUrl})` : undefined, backgroundSize: "cover", backgroundPosition: "center" }}>
+                  // ✅ FIX 1: Entfernen-Modus subtrahiert auch bei Speisen
+                  <button 
+                    key={food.id} 
+                    onClick={() => {
+                      if (removeMode) {
+                        const currentCount = orderFoodItems.get(food.id)?.quantity || 0;
+                        if (currentCount > 0) {
+                          updateItemQuantity("food", food.id, currentCount - 1);
+                        }
+                      } else {
+                        addFood(food);
+                      }
+                    }} 
+                    className={`relative rounded-xl p-2 md:p-3 text-left active:scale-[0.97] transition-all shadow-md border ${removeMode && count > 0 ? "border-red-400 border-2" : "border-white/10 hover:border-white/30"} min-h-[80px] md:min-h-[100px] flex flex-col justify-between`} 
+                    style={{ backgroundColor: food.color, backgroundImage: food.imageUrl ? `linear-gradient(rgba(0,0,0,0.45), rgba(0,0,0,0.65)), url(${food.imageUrl})` : undefined, backgroundSize: "cover", backgroundPosition: "center" }}
+                  >
                     {count > 0 && <div className="absolute -top-1.5 -right-1.5 bg-white text-gray-900 rounded-full w-6 h-6 md:w-7 md:h-7 flex items-center justify-center font-extrabold text-sm shadow-lg border border-gray-200">{count}</div>}
                     {removeMode && count > 0 && <div className="absolute -top-1.5 -left-1.5 bg-red-500 text-white rounded-full w-5 h-5 flex items-center justify-center font-black text-xs shadow-lg">−</div>}
                     <div className="font-extrabold text-sm md:text-base leading-tight drop-shadow-md">{food.name}</div>
@@ -471,17 +515,184 @@ export default function POSPage() {
         )}
       </div>
 
-      {showResetConfirm && (<div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4"><div className="bg-gray-800 rounded-2xl p-5 max-w-sm w-full shadow-2xl border border-gray-600"><h2 className="text-lg font-bold mb-2 text-center">⚠️ Bestellung abschließen?</h2><div className="mb-3 bg-gray-700/50 rounded-lg p-2"><label className="block text-xs text-gray-400 mb-1">Verkaufsstelle</label><select value={selectedSalesPointId ?? ""} onChange={(e) => setSelectedSalesPointId(parseInt(e.target.value))} className="w-full bg-gray-700 text-white text-sm rounded-lg px-2 py-1.5 border border-gray-600 focus:border-blue-500 focus:outline-none">{salesPoints.map((sp) => (<option key={sp.id} value={sp.id}>{sp.name}</option>))}</select></div><div className="text-center mb-3"><p className="text-gray-300 text-sm">Gesamtbetrag:</p><p className="text-3xl font-extrabold text-green-400 tabular-nums">{grandTotal.toFixed(2)} €</p>{netDeposit !== 0 && <p className="text-xs text-amber-400">(inkl. Pfand: {netDeposit > 0 ? "+" : ""}{netDeposit.toFixed(2)} €)</p>}<p className="text-xs text-gray-400">{totalDrinksCount} Getränke · {totalFoodsCount} Speisen · {items.length + foodItems.length} Positionen</p></div>{hasPourDrinks && <button onClick={sendToPour} disabled={pourSent} className={`w-full mb-3 py-2.5 rounded-lg text-sm font-bold border transition-all ${pourSent ? "bg-green-600 border-green-400 text-white cursor-default" : "bg-orange-600 hover:bg-orange-500 border-orange-400/40 text-white"}`}>{pourSent ? "✓ An Zapfanlage gesendet" : `🍺 ${pourItemCount}× an Zapfanlage senden`}</button>}<button onClick={() => setShowCalculator(true)} className="w-full mb-3 py-2 rounded-lg bg-blue-700/50 hover:bg-blue-600/50 text-blue-300 text-sm font-medium border border-blue-600/30 transition-all">🧮 Wechselgeld</button><p className="text-xs text-gray-400 mb-4 text-center">Die Bestellung wird gespeichert und der Zähler auf Null zurückgesetzt.</p><div className="flex gap-3"><button onClick={() => setShowResetConfirm(false)} className="flex-1 py-2.5 rounded-xl font-bold bg-gray-600 hover:bg-gray-500 transition-all">Abbrechen</button><button onClick={handleReset} className="flex-1 py-2.5 rounded-xl font-bold bg-amber-600 hover:bg-amber-500 transition-all border border-amber-400/30">Ja, abschließen</button></div></div></div>)}
-      {showCancelConfirm && (<div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/70 p-4"><div className="bg-gray-800 rounded-2xl p-5 max-w-sm w-full shadow-2xl border border-gray-600"><h2 className="text-lg font-bold mb-3 text-center text-red-400">⚠️ Abbrechen?</h2><div className="text-center mb-4"><p className="text-sm text-gray-300">Bestellung wirklich verwerfen?</p>{pourSent && <p className="text-xs text-amber-400 mt-1">🍺 Zapf-Daten werden storniert.</p>}<p className="text-xs text-gray-400 mt-1">{totalDrinksCount} Getränke · {totalFoodsCount} Speisen · {grandTotal.toFixed(2)} €</p></div><div className="flex gap-3"><button onClick={() => setShowCancelConfirm(false)} className="flex-1 py-2.5 rounded-xl font-bold bg-gray-600">Weiter</button><button onClick={cancelOrder} className="flex-1 py-2.5 rounded-xl font-bold bg-red-600">Verwerfen</button></div></div></div>)}
-      {editingItem !== null && (<div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4"><div className="bg-gray-800 rounded-2xl p-5 max-w-xs w-full shadow-2xl border border-gray-600"><h3 className="text-lg font-bold mb-3 text-center">Anzahl ändern</h3><p className="text-sm text-gray-300 text-center mb-3">{editingItem.type === "drink" ? orderItems.get(editingItem.id)?.drinkName : orderFoodItems.get(editingItem.id)?.foodName}</p><input type="number" min="0" value={editQuantity} onChange={(e) => setEditQuantity(e.target.value)} className="w-full px-3 py-2 rounded-xl bg-gray-700 text-white text-lg font-bold text-center border border-gray-600 focus:border-blue-500 focus:outline-none tabular-nums mb-4" autoFocus /><div className="flex gap-3"><button onClick={() => setEditingItem(null)} className="flex-1 py-2.5 rounded-xl font-bold bg-gray-600">Abbrechen</button><button onClick={() => { const qty = parseInt(editQuantity); if (!isNaN(qty)) updateItemQuantity(editingItem.type, editingItem.id, qty); setEditingItem(null); }} className="flex-1 py-2.5 rounded-xl font-bold bg-amber-600">Speichern</button></div></div></div>)}
+      {/* ✅ FIX 4: Bestellungs-Abschluss Modal ist jetzt Fullscreen mit höherem z-index */}
+      {showResetConfirm && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/90 p-4">
+          <div className="bg-gray-800 rounded-2xl p-5 max-w-sm w-full shadow-2xl border border-gray-600">
+            <h2 className="text-lg font-bold mb-2 text-center">⚠️ Bestellung abschließen?</h2>
+            <div className="mb-3 bg-gray-700/50 rounded-lg p-2">
+              <label className="block text-xs text-gray-400 mb-1">Verkaufsstelle</label>
+              <select value={selectedSalesPointId ?? ""} onChange={(e) => setSelectedSalesPointId(parseInt(e.target.value))} className="w-full bg-gray-700 text-white text-sm rounded-lg px-2 py-1.5 border border-gray-600 focus:border-blue-500 focus:outline-none">
+                {salesPoints.map((sp) => (<option key={sp.id} value={sp.id}>{sp.name}</option>))}
+              </select>
+            </div>
+            <div className="text-center mb-3">
+              <p className="text-gray-300 text-sm">Gesamtbetrag:</p>
+              <p className="text-3xl font-extrabold text-green-400 tabular-nums">{grandTotal.toFixed(2)} €</p>
+              {netDeposit !== 0 && <p className="text-xs text-amber-400">(inkl. Pfand: {netDeposit > 0 ? "+" : ""}{netDeposit.toFixed(2)} €)</p>}
+              <p className="text-xs text-gray-400">{totalDrinksCount} Getränke · {totalFoodsCount} Speisen · {items.length + foodItems.length} Positionen</p>
+            </div>
+            
+            {/* ✅ FIX 3: Pflichtfeld - Warnung wenn Zapf-Drinks nicht gesendet wurden */}
+            {hasPourDrinks && !pourSent && (
+              <div className="mb-3 bg-red-900/40 border border-red-500 rounded-lg p-2 text-center">
+                <p className="text-xs text-red-300 font-bold">⚠️ {pourItemCount} Zapf-Getränk(e) noch nicht an die Zapfanlage gesendet!</p>
+                <p className="text-[10px] text-red-200 mt-1">Bitte erst senden, dann abschließen.</p>
+              </div>
+            )}
+            
+            {hasPourDrinks && (
+              <button 
+                onClick={sendToPour} 
+                disabled={pourSent} 
+                className={`w-full mb-3 py-2.5 rounded-lg text-sm font-bold border transition-all ${pourSent ? "bg-green-600 border-green-400 text-white cursor-default" : "bg-orange-600 hover:bg-orange-500 border-orange-400/40 text-white"}`}
+              >
+                {pourSent ? "✓ An Zapfanlage gesendet" : `🍺 ${pourItemCount}× an Zapfanlage senden`}
+              </button>
+            )}
+            <button onClick={() => setShowCalculator(true)} className="w-full mb-3 py-2 rounded-lg bg-blue-700/50 hover:bg-blue-600/50 text-blue-300 text-sm font-medium border border-blue-600/30 transition-all">🧮 Wechselgeld</button>
+            <p className="text-xs text-gray-400 mb-4 text-center">Die Bestellung wird gespeichert und der Zähler auf Null zurückgesetzt.</p>
+            <div className="flex gap-3">
+              <button onClick={() => setShowResetConfirm(false)} className="flex-1 py-2.5 rounded-xl font-bold bg-gray-600 hover:bg-gray-500 transition-all">Abbrechen</button>
+              <button 
+                onClick={handleReset} 
+                disabled={hasPourDrinks && !pourSent}
+                className={`flex-1 py-2.5 rounded-xl font-bold transition-all border ${hasPourDrinks && !pourSent ? "bg-gray-700 text-gray-500 border-gray-600 cursor-not-allowed" : "bg-amber-600 hover:bg-amber-500 border-amber-400/30"}`}
+              >
+                Ja, abschließen
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      
+      {showCancelConfirm && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/70 p-4">
+          <div className="bg-gray-800 rounded-2xl p-5 max-w-sm w-full shadow-2xl border border-gray-600">
+            <h2 className="text-lg font-bold mb-3 text-center text-red-400">⚠️ Abbrechen?</h2>
+            <div className="text-center mb-4">
+              <p className="text-sm text-gray-300">Bestellung wirklich verwerfen?</p>
+              {pourSent && <p className="text-xs text-amber-400 mt-1">🍺 Zapf-Daten werden storniert.</p>}
+              <p className="text-xs text-gray-400 mt-1">{totalDrinksCount} Getränke · {totalFoodsCount} Speisen · {grandTotal.toFixed(2)} €</p>
+            </div>
+            <div className="flex gap-3">
+              <button onClick={() => setShowCancelConfirm(false)} className="flex-1 py-2.5 rounded-xl font-bold bg-gray-600">Weiter</button>
+              <button onClick={cancelOrder} className="flex-1 py-2.5 rounded-xl font-bold bg-red-600">Verwerfen</button>
+            </div>
+          </div>
+        </div>
+      )}
+      
+      {editingItem !== null && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
+          <div className="bg-gray-800 rounded-2xl p-5 max-w-xs w-full shadow-2xl border border-gray-600">
+            <h3 className="text-lg font-bold mb-3 text-center">Anzahl ändern</h3>
+            <p className="text-sm text-gray-300 text-center mb-3">{editingItem.type === "drink" ? orderItems.get(editingItem.id)?.drinkName : orderFoodItems.get(editingItem.id)?.foodName}</p>
+            <input type="number" min="0" value={editQuantity} onChange={(e) => setEditQuantity(e.target.value)} className="w-full px-3 py-2 rounded-xl bg-gray-700 text-white text-lg font-bold text-center border border-gray-600 focus:border-blue-500 focus:outline-none tabular-nums mb-4" autoFocus />
+            <div className="flex gap-3">
+              <button onClick={() => setEditingItem(null)} className="flex-1 py-2.5 rounded-xl font-bold bg-gray-600">Abbrechen</button>
+              <button onClick={() => { const qty = parseInt(editQuantity); if (!isNaN(qty)) updateItemQuantity(editingItem.type, editingItem.id, qty); setEditingItem(null); }} className="flex-1 py-2.5 rounded-xl font-bold bg-amber-600">Speichern</button>
+            </div>
+          </div>
+        </div>
+      )}
+      
       {showCalculator && <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/70 p-4"><CalculatorModal total={grandTotal} onClose={() => setShowCalculator(false)} /></div>}
-      {showSuccess && lastOrder && !handout && (<div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 bg-green-700 text-white px-5 py-2.5 rounded-xl shadow-2xl font-bold text-sm animate-bounce">✅ #{lastOrder.orderId} – {lastOrder.totalGross.toFixed(2)} €</div>)}
-      {handout && (<div className="fixed inset-0 z-[70] flex items-center justify-center bg-gray-900/95 p-4"><div className="bg-gray-800 rounded-2xl w-full max-w-md shadow-2xl border border-gray-600 max-h-[92vh] flex flex-col"><div className="p-4 border-b border-gray-700 shrink-0"><h2 className="text-xl font-extrabold text-center">🥤 Ausgabe – Bestellung #{handout.orderId}</h2><p className="text-xs text-gray-400 text-center mt-1">{handout.salesPointName} · {handout.totalGross.toFixed(2)} €{handout.depositReturnedCount > 0 && <span className="text-amber-400"> · {handout.depositReturnedCount} Becher zurück</span>}</p></div><div className="flex-1 overflow-y-auto p-3 space-y-2">{handout.items.map((item) => { const done = !!handout.checked[item.drinkId]; const dc = drinks.find((d) => d.id === item.drinkId)?.color || "#6B7280"; return (<button key={`d-${item.drinkId}`} onClick={() => setHandout((h) => h ? {...h, checked:{...h.checked, [item.drinkId]:!h.checked[item.drinkId]}} : h)} className={`w-full flex items-center gap-3 rounded-xl border-2 px-3 py-3 text-left transition-all ${done ? "bg-green-900/40 border-green-500" : "bg-gray-700/50 border-gray-600"}`}><span className="w-4 h-4 rounded-full shrink-0 border border-white/30" style={{backgroundColor:dc}} /><span className={`flex-1 font-bold ${done ? "line-through text-gray-400" : ""}`}>{item.quantity}× {item.drinkName}{item.isPourDrink && <span className="ml-2 text-[10px] bg-orange-600 px-1.5 py-0.5 rounded text-white">ZAPF</span>}</span><span className={`w-8 h-8 rounded-full flex items-center justify-center text-lg font-black shrink-0 ${done ? "bg-green-500 text-white" : "bg-gray-600 text-gray-400"}`}>✓</span></button>);})}{handout.foodItems.map((item) => { const done = !!handout.checked[-item.foodId]; const fc = foods.find((f) => f.id === item.foodId)?.color || "#10B981"; return (<button key={`f-${item.foodId}`} onClick={() => setHandout((h) => h ? {...h, checked:{...h.checked, [-item.foodId]:!h.checked[-item.foodId]}} : h)} className={`w-full flex items-center gap-3 rounded-xl border-2 px-3 py-3 text-left transition-all ${done ? "bg-green-900/40 border-green-500" : "bg-gray-700/50 border-gray-600"}`}><span className="w-4 h-4 rounded-full shrink-0 border border-white/30" style={{backgroundColor:fc}} /><span className={`flex-1 font-bold ${done ? "line-through text-gray-400" : ""}`}>{item.quantity}× {item.foodName}</span><span className={`w-8 h-8 rounded-full flex items-center justify-center text-lg font-black shrink-0 ${done ? "bg-green-500 text-white" : "bg-gray-600 text-gray-400"}`}>✓</span></button>);})}</div><div className="p-4 border-t border-gray-700 shrink-0"><div className="w-full h-2 rounded-full bg-gray-700 mb-3 overflow-hidden"><div className="h-full bg-green-500 transition-all" style={{width: `${(handout.items.length + handout.foodItems.length) > 0 ? (handoutCheckedCount / (handout.items.length + handout.foodItems.length)) * 100 : 0}%`}} /></div><button onClick={() => setHandout(null)} disabled={!handoutAllDone} className={`w-full py-3 rounded-xl font-bold transition-all ${handoutAllDone ? "bg-green-600 hover:bg-green-500" : "bg-gray-700 text-gray-500 cursor-not-allowed"}`}>{handoutAllDone ? "✅ Fertig – neue Bestellung" : "Erst alle abhaken"}</button></div></div></div>)}
+      
+      {/* ✅ FIX 4: Erfolgs-Modal ist jetzt Fullscreen */}
+      {showSuccess && lastOrder && !handout && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 pointer-events-none">
+          <div className="bg-green-700 text-white px-8 py-6 rounded-2xl shadow-2xl font-bold text-xl animate-bounce text-center">
+            ✅ Bestellung #{lastOrder.orderId}<br/>
+            <span className="text-3xl">{lastOrder.totalGross.toFixed(2)} €</span>
+          </div>
+        </div>
+      )}
+      
+      {/* ✅ FIX 4: Handout-Modal ist jetzt Fullscreen */}
+      {handout && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-gray-900/98 p-4">
+          <div className="bg-gray-800 rounded-2xl w-full max-w-md shadow-2xl border border-gray-600 max-h-[92vh] flex flex-col">
+            <div className="p-4 border-b border-gray-700 shrink-0">
+              <h2 className="text-xl font-extrabold text-center">🥤 Ausgabe – Bestellung #{handout.orderId}</h2>
+              <p className="text-xs text-gray-400 text-center mt-1">{handout.salesPointName} · {handout.totalGross.toFixed(2)} €{handout.depositReturnedCount > 0 && <span className="text-amber-400"> · {handout.depositReturnedCount} Becher zurück</span>}</p>
+            </div>
+            <div className="flex-1 overflow-y-auto p-3 space-y-2">
+              {handout.items.map((item) => { 
+                const done = !!handout.checked[item.drinkId]; 
+                const dc = drinks.find((d) => d.id === item.drinkId)?.color || "#6B7280"; 
+                return (
+                  <button 
+                    key={`d-${item.drinkId}`} 
+                    onClick={() => setHandout((h) => h ? {...h, checked:{...h.checked, [item.drinkId]:!h.checked[item.drinkId]}} : h)} 
+                    className={`w-full flex items-center gap-3 rounded-xl border-2 px-3 py-3 text-left transition-all ${done ? "bg-green-900/40 border-green-500" : "bg-gray-700/50 border-gray-600"}`}
+                  >
+                    <span className="w-4 h-4 rounded-full shrink-0 border border-white/30" style={{backgroundColor:dc}} />
+                    <span className={`flex-1 font-bold ${done ? "line-through text-gray-400" : ""}`}>
+                      {item.quantity}× {item.drinkName}{item.isPourDrink && <span className="ml-2 text-[10px] bg-orange-600 px-1.5 py-0.5 rounded text-white">ZAPF</span>}
+                    </span>
+                    <span className={`w-8 h-8 rounded-full flex items-center justify-center text-lg font-black shrink-0 ${done ? "bg-green-500 text-white" : "bg-gray-600 text-gray-400"}`}>✓</span>
+                  </button>
+                );
+              })}
+              {handout.foodItems.map((item) => { 
+                const done = !!handout.checked[-item.foodId]; 
+                const fc = foods.find((f) => f.id === item.foodId)?.color || "#10B981"; 
+                return (
+                  <button 
+                    key={`f-${item.foodId}`} 
+                    onClick={() => setHandout((h) => h ? {...h, checked:{...h.checked, [-item.foodId]:!h.checked[-item.foodId]}} : h)} 
+                    className={`w-full flex items-center gap-3 rounded-xl border-2 px-3 py-3 text-left transition-all ${done ? "bg-green-900/40 border-green-500" : "bg-gray-700/50 border-gray-600"}`}
+                  >
+                    <span className="w-4 h-4 rounded-full shrink-0 border border-white/30" style={{backgroundColor:fc}} />
+                    <span className={`flex-1 font-bold ${done ? "line-through text-gray-400" : ""}`}>{item.quantity}× {item.foodName}</span>
+                    <span className={`w-8 h-8 rounded-full flex items-center justify-center text-lg font-black shrink-0 ${done ? "bg-green-500 text-white" : "bg-gray-600 text-gray-400"}`}>✓</span>
+                  </button>
+                );
+              })}
+            </div>
+            <div className="p-4 border-t border-gray-700 shrink-0">
+              <div className="w-full h-2 rounded-full bg-gray-700 mb-3 overflow-hidden">
+                <div 
+                  className="h-full bg-green-500 transition-all" 
+                  style={{width: `${handoutAllItems > 0 ? (handoutCheckedCount / handoutAllItems) * 100 : 0}%`}} 
+                />
+              </div>
+              <button 
+                onClick={() => setHandout(null)} 
+                disabled={!handoutAllDone} 
+                className={`w-full py-3 rounded-xl font-bold transition-all ${handoutAllDone ? "bg-green-600 hover:bg-green-500" : "bg-gray-700 text-gray-500 cursor-not-allowed"}`}
+              >
+                {handoutAllDone ? "✅ Fertig – neue Bestellung" : "Erst alle abhaken"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
 
 function CalculatorModal({ total, onClose }: { total: number; onClose: () => void }) {
-  const [given, setGiven] = useState(""); const gn = parseFloat(given.replace(",", ".")) || 0; const ch = gn - total;
-  return (<div className="bg-gray-800 rounded-2xl p-5 max-w-xs w-full shadow-2xl border border-gray-600"><h3 className="text-lg font-bold mb-3 text-center">🧮 Wechselgeld</h3><div className="text-center mb-3"><div className="text-xs text-gray-400">Zu zahlen</div><div className="text-2xl font-extrabold text-green-400 tabular-nums">{total.toFixed(2)} €</div></div><div className="mb-3"><label className="block text-xs text-gray-400 mb-1">Erhalten (€)</label><input type="number" value={given} onChange={(e) => setGiven(e.target.value)} className="w-full px-3 py-2 rounded-xl bg-gray-700 text-white text-lg font-bold text-center border border-gray-600 focus:border-blue-500 focus:outline-none tabular-nums" placeholder="0,00" autoFocus /></div><div className="grid grid-cols-4 gap-2 mb-3">{[5,10,20,50].map((a) => (<button key={a} onClick={() => setGiven(a.toFixed(2))} className="py-2 rounded-lg bg-gray-700 hover:bg-gray-600 text-sm font-bold">{a} €</button>))}</div>{gn > 0 && <div className="text-center mb-3 p-2 rounded-lg bg-gray-700/50"><div className="text-xs text-gray-400">Wechselgeld</div><div className={`text-2xl font-extrabold tabular-nums ${ch >= 0 ? "text-green-400" : "text-red-400"}`}>{ch >= 0 ? "" : "-"}{Math.abs(ch).toFixed(2)} €</div></div>}<button onClick={onClose} className="w-full py-2.5 rounded-xl font-bold bg-amber-600 hover:bg-amber-500">Schließen</button></div>);
+  const [given, setGiven] = useState(""); 
+  const gn = parseFloat(given.replace(",", ".")) || 0; 
+  const ch = gn - total;
+  return (
+    <div className="bg-gray-800 rounded-2xl p-5 max-w-xs w-full shadow-2xl border border-gray-600">
+      <h3 className="text-lg font-bold mb-3 text-center">🧮 Wechselgeld</h3>
+      <div className="text-center mb-3">
+        <div className="text-xs text-gray-400">Zu zahlen</div>
+        <div className="text-2xl font-extrabold text-green-400 tabular-nums">{total.toFixed(2)} €</div>
+      </div>
+      <div className="mb-3">
+        <label className="block text-xs text-gray-400 mb-1">Erhalten (€)</label>
+        <input type="number" value={given} onChange={(e) => setGiven(e.target.value)} className="w-full px-3 py-2 rounded-xl bg-gray-700 text-white text-lg font-bold text-center border border-gray-600 focus:border-blue-500 focus:outline-none tabular-nums" placeholder="0,00" autoFocus />
+      </div>
+      <div className="grid grid-cols-4 gap-2 mb-3">
+        {[5,10,20,50].map((a) => (<button key={a} onClick={() => setGiven(a.toFixed(2))} className="py-2 rounded-lg bg-gray-700 hover:bg-gray-600 text-sm font-bold">{a} €</button>))}
+      </div>
+      {gn > 0 && <div className="text-center mb-3 p-2 rounded-lg bg-gray-700/50"><div className="text-xs text-gray-400">Wechselgeld</div><div className={`text-2xl font-extrabold tabular-nums ${ch >= 0 ? "text-green-400" : "text-red-400"}`}>{ch >= 0 ? "" : "-"}{Math.abs(ch).toFixed(2)} €</div></div>}
+      <button onClick={onClose} className="w-full py-2.5 rounded-xl font-bold bg-amber-600 hover:bg-amber-500">Schließen</button>
+    </div>
+  );
 }
