@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
+import OrdersAnalytics from "./orders
 
 type Drink = { id: number; name: string; priceGross: number; taxRate: number; hasDeposit: boolean; depositAmount: number; cupSize: string; color: string; imageUrl: string | null; isActive: boolean; sortOrder: number; isPourDrink: boolean; salesPointIds?: number[]; group?: string | null; };
 type Food = { id: number; name: string; priceGross: number; taxRate: number; color: string; imageUrl: string | null; isActive: boolean; isCookItem: boolean; sortOrder: number; group?: string | null; };
@@ -595,6 +596,10 @@ export default function AdminPage() {
           </div>
         )}
 
+        {/*ORDERS TAB}
+         {activeTab === "orders" && <OrdersAnalytics />}
+
+         
         {/* EMPLOYEES TAB */}
         {activeTab === "employees" && (
           <div>
