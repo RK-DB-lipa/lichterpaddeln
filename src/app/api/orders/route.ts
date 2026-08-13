@@ -42,6 +42,46 @@ export async function POST(req: NextRequest) {
     const body = await req.json();
     const { items, foodItems, depositReturned, salesPointId, cashierName } = body;
 
+    const returned02 = depositReturned02 || 0;
+    const returned04 = depositReturned04 || 0;
+    const depositReturnAmount = (returned02 + returned04) * 2; // Jeder Becher = 2€
+    const netDeposit = totalDeposit - depositReturnAmount;
+
+    // ✅ NEU: Cup-Counter für Rückgabe aktualisieren
+    if (returned02 > 0) {
+      await db.execute(sql`
+        INSERT INTO cup_counters (tenant_id, sales_point_id, size, given, returned, created_at)
+        VALUES (${tenantId}, ${salesPointId}, '02', 0, ${returned02}, now())
+        ON CONFLICT (tenant_id, sales_point_id, size)
+        DO UPDATE SET returned = cup_counters.returned + ${returned02}
+      `);
+    }
+    if (returned04 > 0) {
+      await db.execute(sql`
+        INSERT INTO cup_counters (tenant_id, sales_point_id, size, given, returned, created_at)
+        VALUES (${tenantId}, ${salesPointId}, '04', 0, ${returned04}, now())
+        ON CONFLICT (tenant_id, sales_point_id, size)
+        DO UPDATE SET returned = cup_counters.returned + ${returned04}
+      `);
+    }
+
+    const resolvedCashierName = await resolveEmployeeName(tenantId, cashierName || displayName || "");
+
+    const [order] = await db
+      .insert(orders)
+      .values({
+        tenantId,
+        salesPointId: parseInt(salesPointId),
+        totalGross: +totalGross.toFixed(2),
+        totalDeposit: +totalDeposit.toFixed(2),
+        totalDepositReturned: depositReturnAmount,
+        netDeposit: +netDeposit.toFixed(2),
+        depositReturned02: returned02, // ✅ NEU
+        depositReturned04: returned04, // ✅ NEU
+        cashierName: resolvedCashierName,
+      })
+      .returning();
+
     if (!salesPointId) {
       return NextResponse.json({ error: "Verkaufsstelle ist erforderlich" }, { status: 400 });
     }
