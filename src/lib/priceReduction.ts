@@ -1,68 +1,47 @@
-import { db } from "@/db";
-import { priceReductions } from "@/db/schema";
-import { eq, and } from "drizzle-orm";
+export type PriceReduction = {
+  id: number;
+  itemId: number;
+  itemType: "drink" | "food";
+  startTime: string; // Format: "HH:mm"
+  endTime: string;   // Format: "HH:mm"
+  reductionPercent: number;
+  isActive: boolean;
+};
 
-/**
- * Prüft ob eine Preisreduktion für ein Item aktiv ist und gibt den reduzierten Preis zurück
- * @param tenantId Tenant-ID
- * @param itemId ID des Drinks oder Foods
- * @param itemType "drink" oder "food"
- * @param originalPrice Originaler Bruttopreis
- * @returns { reducedPrice, reductionPercent, isActive }
- */
-export async function getReducedPrice(
-  tenantId: number,
+export function getReducedPrice(
+  priceGross: number,
+  priceReductions: PriceReduction[],
   itemId: number,
-  itemType: "drink" | "food",
-  originalPrice: number
-): Promise<{ reducedPrice: number; reductionPercent: number; isActive: boolean }> {
-  // Aktuelle Uhrzeit im Format "HH:MM"
+  itemType: "drink" | "food"
+): { reducedPrice: number; reductionPercent: number } | null {
+  // ✅ FIX: Lokale Zeit des Clients/Servers verwenden, nicht UTC
   const now = new Date();
-  const currentTime = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+  const localHours = String(now.getHours()).padStart(2, "0");
+  const localMinutes = String(now.getMinutes()).padStart(2, "0");
+  const currentTime = `${localHours}:${localMinutes}`;
 
-  // Aktive Preisreduktionen für dieses Item abrufen
-  const reductions = await db
-    .select()
-    .from(priceReductions)
-    .where(and(
-      eq(priceReductions.tenantId, tenantId),
-      eq(priceReductions.itemId, itemId),
-      eq(priceReductions.itemType, itemType),
-    ));
-
-  // Prüfen ob eine Reduktion zur aktuellen Zeit aktiv ist
-  for (const reduction of reductions) {
-    if (!reduction.isActive) continue;
-
-    const startTime = reduction.startTime;
-    const endTime = reduction.endTime;
-
-    // Prüfen ob die aktuelle Zeit im Zeitraum liegt
-    // Unterstützt auch über Mitternacht (z.B. 23:00 bis 02:00)
-    let isActive = false;
-
+  const activeReduction = priceReductions.find((pr) => {
+    if (!pr.isActive || pr.itemId !== itemId || pr.itemType !== itemType) {
+      return false;
+    }
+    
+    const { startTime, endTime } = pr;
+    
+    // Prüfen, ob die aktuelle Zeit im Reduktionsfenster liegt
     if (startTime <= endTime) {
-      // Normaler Fall: z.B. 10:00 bis 18:00
-      isActive = currentTime >= startTime && currentTime <= endTime;
+      // Normaler Fall: z.B. 10:00 - 14:00
+      return currentTime >= startTime && currentTime <= endTime;
     } else {
-      // Über Mitternacht: z.B. 23:00 bis 02:00
-      isActive = currentTime >= startTime || currentTime <= endTime;
+      // Über Mitternacht: z.B. 22:00 - 02:00
+      return currentTime >= startTime || currentTime <= endTime;
     }
+  });
 
-    if (isActive) {
-      const reducedPrice = +(originalPrice * (1 - reduction.reductionPercent / 100)).toFixed(2);
-      return {
-        reducedPrice,
-        reductionPercent: reduction.reductionPercent,
-        isActive: true,
-      };
-    }
+  if (activeReduction) {
+    // Preis berechnen und auf 2 Nachkommastellen runden
+    const reducedPrice = +(priceGross * (1 - activeReduction.reductionPercent / 100)).toFixed(2);
+    return { reducedPrice, reductionPercent: activeReduction.reductionPercent };
   }
 
-  // Keine aktive Reduktion gefunden
-  return {
-    reducedPrice: originalPrice,
-    reductionPercent: 0,
-    isActive: false,
-  };
+  return null;
 }
