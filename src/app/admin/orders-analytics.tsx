@@ -466,7 +466,8 @@ export default function OrdersAnalytics() {
                 <div>
                   <h4 className="font-bold text-sm mb-2 text-blue-400">🍺 Getränke</h4>
                   <div className="space-y-1">
-                    {selectedOrder.items.map((item, i) => (
+                    {/* ✅ FIX: Typannotationen hinzugefügt */}
+                    {selectedOrder.items.map((item: any, i: number) => (
                       <div key={i} className="flex justify-between text-sm bg-gray-700/30 rounded-lg px-3 py-2">
                         <span>{item.quantity}× {item.drinkName}</span>
                         <span className="tabular-nums font-bold">{fmt(item.totalPriceGross)}</span>
@@ -480,7 +481,8 @@ export default function OrdersAnalytics() {
                 <div>
                   <h4 className="font-bold text-sm mb-2 text-green-400">🍔 Speisen</h4>
                   <div className="space-y-1">
-                    {selectedOrder.foodItems.map((item, i) => (
+                    {/* ✅ FIX: Typannotationen hinzugefügt */}
+                    {selectedOrder.foodItems.map((item: any, i: number) => (
                       <div key={i} className="flex justify-between text-sm bg-gray-700/30 rounded-lg px-3 py-2">
                         <span>{item.quantity}× {item.foodName}</span>
                         <span className="tabular-nums font-bold">{fmt(item.totalPriceGross)}</span>
