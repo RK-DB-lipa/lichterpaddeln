@@ -596,7 +596,7 @@ export default function AdminPage() {
           </div>
         )}
 
-        {/*ORDERS TAB}
+        {/*BESTELLUNGEN TAB}
          {activeTab === "orders" && <OrdersAnalytics />}
 
          
