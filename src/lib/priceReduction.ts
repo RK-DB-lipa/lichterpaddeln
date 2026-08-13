@@ -9,7 +9,7 @@ export async function getReducedPrice(
   priceGross: number
 ): Promise<{ reducedPrice: number; reductionPercent: number; isActive: boolean } | null> {
   // ✅ FIX: Hole die aktuelle Zeit explizit in der deutschen Zeitzone (Europe/Berlin),
-  // unabhängig davon, wo der Vercel-Server physisch steht.
+  // unabhängig davon, wo der Vercel-Server physisch steht (z.B. Washington D.C.).
   const now = new Date();
   const localTimeString = now.toLocaleString("en-US", { timeZone: "Europe/Berlin" });
   const localDate = new Date(localTimeString);
