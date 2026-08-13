@@ -13,40 +13,22 @@ function bumpCup(tId: number, spId: number, size: string, givenCount: number) {
   `;
 }
 
-// Helper: Datum und Zeit zu ISO-String kombinieren
 function buildDateTime(date: string | null, time: string | null, type: "start" | "end"): Date | null {
   if (!date && !time) return null;
-  
   const d = date || (type === "start" ? "1970-01-01" : "9999-12-31");
   const t = time || (type === "start" ? "00:00" : "23:59");
-  
   return new Date(`${d}T${t}:00.000Z`);
 }
 
-// Helper: Alias-Namen in Hauptnamen auflösen
 async function resolveEmployeeName(tenantId: number, aliasName: string): Promise<string> {
   if (!aliasName) return "";
-  
-  // Prüfen ob der Name ein Alias ist
   const alias = await db
-    .select({
-      employeeId: employeeAliases.employeeId,
-      displayName: employees.displayName,
-    })
+    .select({ employeeId: employeeAliases.employeeId, displayName: employees.displayName })
     .from(employeeAliases)
     .innerJoin(employees, eq(employeeAliases.employeeId, employees.id))
-    .where(and(
-      eq(employeeAliases.tenantId, tenantId),
-      eq(employeeAliases.aliasName, aliasName.trim())
-    ))
+    .where(and(eq(employeeAliases.tenantId, tenantId), eq(employeeAliases.aliasName, aliasName.trim())))
     .limit(1);
-  
-  if (alias.length > 0) {
-    // Alias gefunden → Hauptnamen zurückgeben
-    return alias[0].displayName;
-  }
-  
-  // Kein Alias gefunden → Originalnamen zurückgeben
+  if (alias.length > 0) return alias[0].displayName;
   return aliasName.trim();
 }
 
@@ -72,7 +54,6 @@ export async function POST(req: NextRequest) {
     const orderItemData: (typeof orderItems.$inferInsert)[] = [];
     const orderFoodItemData: (typeof orderFoodItems.$inferInsert)[] = [];
 
-    // Getränke verarbeiten
     if (items && items.length > 0) {
       const allDrinks = await db.select().from(drinks).where(eq(drinks.tenantId, tenantId));
       const drinkMap = new Map(allDrinks.map((d) => [d.id, d]));
@@ -105,7 +86,6 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // Speisen verarbeiten
     if (foodItems && foodItems.length > 0) {
       const allFoods = await db.select().from(foods).where(eq(foods.tenantId, tenantId));
       const foodMap = new Map(allFoods.map((f) => [f.id, f]));
@@ -132,11 +112,7 @@ export async function POST(req: NextRequest) {
     const depositReturnAmount = (depositReturned || 0) * 2;
     const netDeposit = totalDeposit - depositReturnAmount;
 
-    // Alias-Namen in Hauptnamen auflösen
-    const resolvedCashierName = await resolveEmployeeName(
-      tenantId,
-      cashierName || displayName || ""
-    );
+    const resolvedCashierName = await resolveEmployeeName(tenantId, cashierName || displayName || "");
 
     const [order] = await db
       .insert(orders)
@@ -160,7 +136,6 @@ export async function POST(req: NextRequest) {
     if (foodItemsWithOrderId.length > 0) {
       await db.insert(orderFoodItems).values(foodItemsWithOrderId);
       
-      // Speisen an die Küche senden (food_queue)
       for (const foodItem of foodItemsWithOrderId) {
         const existing = await db
           .select()
@@ -211,103 +186,159 @@ export async function GET(req: NextRequest) {
     const url = new URL(req.url);
     const salesPointId = url.searchParams.get("salesPointId");
     const cashierNameFilter = url.searchParams.get("cashierName");
-    
-    // Zeitfilter-Parameter
-    const fromDate = url.searchParams.get("fromDate"); // Format: YYYY-MM-DD
-    const fromTime = url.searchParams.get("fromTime"); // Format: HH:MM
-    const toDate = url.searchParams.get("toDate");     // Format: YYYY-MM-DD
-    const toTime = url.searchParams.get("toTime");     // Format: HH:MM
+    const fromDate = url.searchParams.get("fromDate");
+    const fromTime = url.searchParams.get("fromTime");
+    const toDate = url.searchParams.get("toDate");
+    const toTime = url.searchParams.get("toTime");
 
-    // Build filter conditions
     const conditions = [eq(orders.tenantId, tenantId)];
     if (salesPointId) conditions.push(eq(orders.salesPointId, parseInt(salesPointId)));
     if (cashierNameFilter) conditions.push(eq(orders.cashierName, cashierNameFilter));
     
-    // Zeitfilter anwenden
     if (fromDate || fromTime) {
       const fromDateTime = buildDateTime(fromDate, fromTime, "start");
-      if (fromDateTime) {
-        conditions.push(gte(orders.createdAt, fromDateTime));
-      }
+      if (fromDateTime) conditions.push(gte(orders.createdAt, fromDateTime));
     }
     if (toDate || toTime) {
       const toDateTime = buildDateTime(toDate, toTime, "end");
-      if (toDateTime) {
-        conditions.push(lte(orders.createdAt, toDateTime));
-      }
+      if (toDateTime) conditions.push(lte(orders.createdAt, toDateTime));
     }
 
     const where = and(...conditions);
 
+    // Alle Bestellungen mit Verkaufsstellen-Name
     const allOrders = await db
-      .select()
+      .select({
+        id: orders.id,
+        salesPointId: orders.salesPointId,
+        totalGross: orders.totalGross,
+        totalDeposit: orders.totalDeposit,
+        totalDepositReturned: orders.totalDepositReturned,
+        netDeposit: orders.netDeposit,
+        cashierName: orders.cashierName,
+        createdAt: orders.createdAt,
+        salesPointName: salesPoints.name,
+      })
       .from(orders)
+      .leftJoin(salesPoints, eq(orders.salesPointId, salesPoints.id))
       .where(where)
       .orderBy(desc(orders.createdAt));
 
-    const summaryWhere = and(...conditions);
-
-    const summaryQuery = db
+    // ✅ Getränke-Auswertung MIT Netto-Preisen (über taxRate aus drinks)
+    const drinkSummary = await db
       .select({
         drinkId: orderItems.drinkId,
         drinkName: orderItems.drinkName,
-        totalQuantity: sql`sum(${orderItems.quantity})`,
-        totalGross: sql`sum(${orderItems.totalPriceGross})`,
-        totalDeposit: sql`sum(${orderItems.totalDeposit})`,
+        totalQuantity: sql<number>`sum(${orderItems.quantity})`.as("total_quantity"),
+        totalGross: sql<number>`sum(${orderItems.totalPriceGross})`.as("total_gross"),
+        totalDeposit: sql<number>`sum(${orderItems.totalDeposit})`.as("total_deposit"),
+        taxRate: drinks.taxRate,
       })
       .from(orderItems)
       .innerJoin(orders, eq(orderItems.orderId, orders.id))
-      .where(summaryWhere)
-      .groupBy(orderItems.drinkId, orderItems.drinkName)
+      .leftJoin(drinks, eq(orderItems.drinkId, drinks.id))
+      .where(where)
+      .groupBy(orderItems.drinkId, orderItems.drinkName, drinks.taxRate)
       .orderBy(desc(sql`sum(${orderItems.quantity})`));
 
-    const drinkSummary = await summaryQuery;
-
-    // Food-Summary
-    const foodSummaryQuery = db
+    // ✅ Speisen-Auswertung MIT Netto-Preisen
+    const foodSummary = await db
       .select({
         foodId: orderFoodItems.foodId,
         foodName: orderFoodItems.foodName,
-        totalQuantity: sql`sum(${orderFoodItems.quantity})`,
-        totalGross: sql`sum(${orderFoodItems.totalPriceGross})`,
+        totalQuantity: sql<number>`sum(${orderFoodItems.quantity})`.as("total_quantity"),
+        totalGross: sql<number>`sum(${orderFoodItems.totalPriceGross})`.as("total_gross"),
+        taxRate: foods.taxRate,
       })
       .from(orderFoodItems)
       .innerJoin(orders, eq(orderFoodItems.orderId, orders.id))
-      .where(summaryWhere)
-      .groupBy(orderFoodItems.foodId, orderFoodItems.foodName)
+      .leftJoin(foods, eq(orderFoodItems.foodId, foods.id))
+      .where(where)
+      .groupBy(orderFoodItems.foodId, orderFoodItems.foodName, foods.taxRate)
       .orderBy(desc(sql`sum(${orderFoodItems.quantity})`));
 
-    const foodSummary = await foodSummaryQuery;
-
-    const totalsQuery = db
+    // Gesamtsummen
+    const orderTotals = await db
       .select({
-        totalOrders: sql`count(*)`,
-        totalRevenue: sql`sum(${orders.totalGross})`,
-        totalDepositsCharged: sql`sum(${orders.totalDeposit})`,
-        totalDepositsReturned: sql`sum(${orders.totalDepositReturned})`,
-        netDeposits: sql`sum(${orders.netDeposit})`,
+        totalOrders: sql<number>`count(*)`.as("total_orders"),
+        totalRevenue: sql<number>`sum(${orders.totalGross})`.as("total_revenue"),
+        totalDepositsCharged: sql<number>`sum(${orders.totalDeposit})`.as("total_deposits_charged"),
+        totalDepositsReturned: sql<number>`sum(${orders.totalDepositReturned})`.as("total_deposits_returned"),
+        netDeposits: sql<number>`sum(${orders.netDeposit})`.as("net_deposits"),
       })
       .from(orders)
       .where(where);
 
-    const orderTotals = await totalsQuery;
+    // ✅ NEU: Stundenweise Auswertung (ganze Stunden)
+    const hourlySummary = await db
+      .select({
+        dayHour: sql<string>`to_char(${orders.createdAt}, 'YYYY-MM-DD HH24:00')`.as("day_hour"),
+        orderCount: sql<number>`count(*)`.as("order_count"),
+        revenue: sql<number>`sum(${orders.totalGross})`.as("revenue"),
+      })
+      .from(orders)
+      .where(where)
+      .groupBy(sql`to_char(${orders.createdAt}, 'YYYY-MM-DD HH24:00')`)
+      .orderBy(sql`to_char(${orders.createdAt}, 'YYYY-MM-DD HH24:00')`);
 
-    // Für jede Order: foodItems laden
-    const ordersWithFoods = await Promise.all(
+    // ✅ NEU: Tageweise Auswertung
+    const dailySummary = await db
+      .select({
+        day: sql<string>`to_char(${orders.createdAt}, 'YYYY-MM-DD')`.as("day"),
+        orderCount: sql<number>`count(*)`.as("order_count"),
+        revenue: sql<number>`sum(${orders.totalGross})`.as("revenue"),
+      })
+      .from(orders)
+      .where(where)
+      .groupBy(sql`to_char(${orders.createdAt}, 'YYYY-MM-DD')`)
+      .orderBy(sql`to_char(${orders.createdAt}, 'YYYY-MM-DD')`);
+
+    // ✅ NEU: Auswertung nach Mitarbeiter
+    const cashierSummary = await db
+      .select({
+        cashierName: orders.cashierName,
+        orderCount: sql<number>`count(*)`.as("order_count"),
+        revenue: sql<number>`sum(${orders.totalGross})`.as("revenue"),
+      })
+      .from(orders)
+      .where(where)
+      .groupBy(orders.cashierName)
+      .orderBy(desc(sql`sum(${orders.totalGross})`));
+
+    // ✅ NEU: Auswertung nach Verkaufsstelle
+    const salesPointSummary = await db
+      .select({
+        salesPointId: orders.salesPointId,
+        salesPointName: salesPoints.name,
+        orderCount: sql<number>`count(*)`.as("order_count"),
+        revenue: sql<number>`sum(${orders.totalGross})`.as("revenue"),
+      })
+      .from(orders)
+      .leftJoin(salesPoints, eq(orders.salesPointId, salesPoints.id))
+      .where(where)
+      .groupBy(orders.salesPointId, salesPoints.name)
+      .orderBy(desc(sql`sum(${orders.totalGross})`));
+
+    // Für jede Order: Details laden (Getränke + Speisen + Verkaufsstelle)
+    const ordersWithDetails = await Promise.all(
       allOrders.map(async (order) => {
-        const foods = await db
-          .select()
-          .from(orderFoodItems)
-          .where(eq(orderFoodItems.orderId, order.id));
-        return { ...order, foodItems: foods };
+        const [orderDrinkItems, orderFoodItemsList] = await Promise.all([
+          db.select().from(orderItems).where(eq(orderItems.orderId, order.id)),
+          db.select().from(orderFoodItems).where(eq(orderFoodItems.orderId, order.id)),
+        ]);
+        return { ...order, items: orderDrinkItems, foodItems: orderFoodItemsList };
       })
     );
 
     return NextResponse.json({
-      orders: ordersWithFoods,
+      orders: ordersWithDetails,
       drinkSummary,
       foodSummary,
       totals: orderTotals[0],
+      hourlySummary,
+      dailySummary,
+      cashierSummary,
+      salesPointSummary,
     });
   } catch (error) {
     console.error("GET /api/orders error:", error);
