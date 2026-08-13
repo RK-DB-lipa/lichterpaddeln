@@ -31,7 +31,7 @@ export async function GET(req: NextRequest) {
       spByDrink.get(a.drinkId)!.push(a.salesPointId);
     }
 
-    // ✅ FIX: Sichere Verarbeitung des reduzierten Preises (kein Destructuring von null)
+    // ✅ FIX: Sichere Verarbeitung ohne Destructuring von null
     const result = await Promise.all(
       activeDrinks.map(async (d) => {
         const reduction = await getReducedPrice(tenantId, d.id, "drink", d.priceGross);
