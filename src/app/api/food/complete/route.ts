@@ -53,13 +53,11 @@ export async function POST(req: NextRequest) {
       .limit(1);
 
     if (existingStats.length > 0) {
-      // Bestehenden Eintrag updaten
       await db
         .update(foodStats)
         .set({ totalCooked: existingStats[0].totalCooked + 1 })
         .where(eq(foodStats.id, existingStats[0].id));
     } else {
-      // Neuen Eintrag erstellen
       await db.insert(foodStats).values({
         tenantId,
         foodName,
