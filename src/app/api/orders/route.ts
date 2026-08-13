@@ -40,47 +40,8 @@ export async function POST(req: NextRequest) {
     const displayName = session.displayName || "";
 
     const body = await req.json();
-    const { items, foodItems, depositReturned, salesPointId, cashierName } = body;
-
-    const returned02 = depositReturned02 || 0;
-    const returned04 = depositReturned04 || 0;
-    const depositReturnAmount = (returned02 + returned04) * 2; // Jeder Becher = 2€
-    const netDeposit = totalDeposit - depositReturnAmount;
-
-    // ✅ NEU: Cup-Counter für Rückgabe aktualisieren
-    if (returned02 > 0) {
-      await db.execute(sql`
-        INSERT INTO cup_counters (tenant_id, sales_point_id, size, given, returned, created_at)
-        VALUES (${tenantId}, ${salesPointId}, '02', 0, ${returned02}, now())
-        ON CONFLICT (tenant_id, sales_point_id, size)
-        DO UPDATE SET returned = cup_counters.returned + ${returned02}
-      `);
-    }
-    if (returned04 > 0) {
-      await db.execute(sql`
-        INSERT INTO cup_counters (tenant_id, sales_point_id, size, given, returned, created_at)
-        VALUES (${tenantId}, ${salesPointId}, '04', 0, ${returned04}, now())
-        ON CONFLICT (tenant_id, sales_point_id, size)
-        DO UPDATE SET returned = cup_counters.returned + ${returned04}
-      `);
-    }
-
-    const resolvedCashierName = await resolveEmployeeName(tenantId, cashierName || displayName || "");
-
-    const [order] = await db
-      .insert(orders)
-      .values({
-        tenantId,
-        salesPointId: parseInt(salesPointId),
-        totalGross: +totalGross.toFixed(2),
-        totalDeposit: +totalDeposit.toFixed(2),
-        totalDepositReturned: depositReturnAmount,
-        netDeposit: +netDeposit.toFixed(2),
-        depositReturned02: returned02, // ✅ NEU
-        depositReturned04: returned04, // ✅ NEU
-        cashierName: resolvedCashierName,
-      })
-      .returning();
+    // ✅ NEU: depositReturned02 und depositReturned04 hinzufügen
+    const { items, foodItems, depositReturned, depositReturned02, depositReturned04, salesPointId, cashierName } = body;
 
     if (!salesPointId) {
       return NextResponse.json({ error: "Verkaufsstelle ist erforderlich" }, { status: 400 });
@@ -149,8 +110,29 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    const depositReturnAmount = (depositReturned || 0) * 2;
+    // ✅ KORRIGIERT: Becher-Rückgabe nach Größe verarbeiten (keine doppelten Deklarationen mehr!)
+    const returned02 = depositReturned02 || 0;
+    const returned04 = depositReturned04 || 0;
+    const depositReturnAmount = (returned02 + returned04) * 2; // Jeder Becher = 2€
     const netDeposit = totalDeposit - depositReturnAmount;
+
+    // ✅ NEU: Cup-Counter für Rückgabe aktualisieren
+    if (returned02 > 0) {
+      await db.execute(sql`
+        INSERT INTO cup_counters (tenant_id, sales_point_id, size, given, returned, created_at)
+        VALUES (${tenantId}, ${salesPointId}, '02', 0, ${returned02}, now())
+        ON CONFLICT (tenant_id, sales_point_id, size)
+        DO UPDATE SET returned = cup_counters.returned + ${returned02}
+      `);
+    }
+    if (returned04 > 0) {
+      await db.execute(sql`
+        INSERT INTO cup_counters (tenant_id, sales_point_id, size, given, returned, created_at)
+        VALUES (${tenantId}, ${salesPointId}, '04', 0, ${returned04}, now())
+        ON CONFLICT (tenant_id, sales_point_id, size)
+        DO UPDATE SET returned = cup_counters.returned + ${returned04}
+      `);
+    }
 
     const resolvedCashierName = await resolveEmployeeName(tenantId, cashierName || displayName || "");
 
@@ -163,6 +145,8 @@ export async function POST(req: NextRequest) {
         totalDeposit: +totalDeposit.toFixed(2),
         totalDepositReturned: depositReturnAmount,
         netDeposit: +netDeposit.toFixed(2),
+        depositReturned02: returned02, // ✅ NEU
+        depositReturned04: returned04, // ✅ NEU
         cashierName: resolvedCashierName,
       })
       .returning();
@@ -246,7 +230,6 @@ export async function GET(req: NextRequest) {
 
     const where = and(...conditions);
 
-    // Alle Bestellungen mit Verkaufsstellen-Name
     const allOrders = await db
       .select({
         id: orders.id,
@@ -264,7 +247,6 @@ export async function GET(req: NextRequest) {
       .where(where)
       .orderBy(desc(orders.createdAt));
 
-    // ✅ Getränke-Auswertung MIT Netto-Preisen (über taxRate aus drinks)
     const drinkSummary = await db
       .select({
         drinkId: orderItems.drinkId,
@@ -281,7 +263,6 @@ export async function GET(req: NextRequest) {
       .groupBy(orderItems.drinkId, orderItems.drinkName, drinks.taxRate)
       .orderBy(desc(sql`sum(${orderItems.quantity})`));
 
-    // ✅ Speisen-Auswertung MIT Netto-Preisen
     const foodSummary = await db
       .select({
         foodId: orderFoodItems.foodId,
@@ -297,7 +278,6 @@ export async function GET(req: NextRequest) {
       .groupBy(orderFoodItems.foodId, orderFoodItems.foodName, foods.taxRate)
       .orderBy(desc(sql`sum(${orderFoodItems.quantity})`));
 
-    // Gesamtsummen
     const orderTotals = await db
       .select({
         totalOrders: sql<number>`count(*)`.as("total_orders"),
@@ -309,7 +289,6 @@ export async function GET(req: NextRequest) {
       .from(orders)
       .where(where);
 
-    // ✅ NEU: Stundenweise Auswertung (ganze Stunden)
     const hourlySummary = await db
       .select({
         dayHour: sql<string>`to_char(${orders.createdAt}, 'YYYY-MM-DD HH24:00')`.as("day_hour"),
@@ -321,7 +300,6 @@ export async function GET(req: NextRequest) {
       .groupBy(sql`to_char(${orders.createdAt}, 'YYYY-MM-DD HH24:00')`)
       .orderBy(sql`to_char(${orders.createdAt}, 'YYYY-MM-DD HH24:00')`);
 
-    // ✅ NEU: Tageweise Auswertung
     const dailySummary = await db
       .select({
         day: sql<string>`to_char(${orders.createdAt}, 'YYYY-MM-DD')`.as("day"),
@@ -333,7 +311,6 @@ export async function GET(req: NextRequest) {
       .groupBy(sql`to_char(${orders.createdAt}, 'YYYY-MM-DD')`)
       .orderBy(sql`to_char(${orders.createdAt}, 'YYYY-MM-DD')`);
 
-    // ✅ NEU: Auswertung nach Mitarbeiter
     const cashierSummary = await db
       .select({
         cashierName: orders.cashierName,
@@ -345,7 +322,6 @@ export async function GET(req: NextRequest) {
       .groupBy(orders.cashierName)
       .orderBy(desc(sql`sum(${orders.totalGross})`));
 
-    // ✅ NEU: Auswertung nach Verkaufsstelle
     const salesPointSummary = await db
       .select({
         salesPointId: orders.salesPointId,
@@ -359,7 +335,6 @@ export async function GET(req: NextRequest) {
       .groupBy(orders.salesPointId, salesPoints.name)
       .orderBy(desc(sql`sum(${orders.totalGross})`));
 
-    // Für jede Order: Details laden (Getränke + Speisen + Verkaufsstelle)
     const ordersWithDetails = await Promise.all(
       allOrders.map(async (order) => {
         const [orderDrinkItems, orderFoodItemsList] = await Promise.all([
