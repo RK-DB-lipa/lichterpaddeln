@@ -1,33 +1,39 @@
-export type PriceReduction = {
-  id: number;
-  itemId: number;
-  itemType: "drink" | "food";
-  startTime: string; // Format: "HH:mm"
-  endTime: string;   // Format: "HH:mm"
-  reductionPercent: number;
-  isActive: boolean;
-};
+import { db } from "@/db";
+import { priceReductions } from "@/db/schema";
+import { eq, and } from "drizzle-orm";
 
-export function getReducedPrice(
-  priceGross: number,
-  priceReductions: PriceReduction[],
+export async function getReducedPrice(
+  tenantId: number,
   itemId: number,
-  itemType: "drink" | "food"
-): { reducedPrice: number; reductionPercent: number } | null {
-  // ✅ FIX: Lokale Zeit des Clients/Servers verwenden, nicht UTC
+  itemType: "drink" | "food",
+  priceGross: number
+): Promise<{ reducedPrice: number; reductionPercent: number; isActive: boolean } | null> {
+  // ✅ FIX: Hole die aktuelle Zeit explizit in der deutschen Zeitzone (Europe/Berlin),
+  // unabhängig davon, wo der Vercel-Server physisch steht.
   const now = new Date();
-  const localHours = String(now.getHours()).padStart(2, "0");
-  const localMinutes = String(now.getMinutes()).padStart(2, "0");
+  const localTimeString = now.toLocaleString("en-US", { timeZone: "Europe/Berlin" });
+  const localDate = new Date(localTimeString);
+  
+  const localHours = String(localDate.getHours()).padStart(2, "0");
+  const localMinutes = String(localDate.getMinutes()).padStart(2, "0");
   const currentTime = `${localHours}:${localMinutes}`;
 
-  const activeReduction = priceReductions.find((pr) => {
-    if (!pr.isActive || pr.itemId !== itemId || pr.itemType !== itemType) {
-      return false;
-    }
-    
+  // Hole alle aktiven Preisreduktionen für dieses Item
+  const activeReductions = await db
+    .select()
+    .from(priceReductions)
+    .where(
+      and(
+        eq(priceReductions.tenantId, tenantId),
+        eq(priceReductions.itemId, itemId),
+        eq(priceReductions.itemType, itemType),
+        eq(priceReductions.isActive, true)
+      )
+    );
+
+  // Prüfe, ob die aktuelle Zeit in einem der Fenster liegt
+  const matchingReduction = activeReductions.find((pr) => {
     const { startTime, endTime } = pr;
-    
-    // Prüfen, ob die aktuelle Zeit im Reduktionsfenster liegt
     if (startTime <= endTime) {
       // Normaler Fall: z.B. 10:00 - 14:00
       return currentTime >= startTime && currentTime <= endTime;
@@ -37,10 +43,13 @@ export function getReducedPrice(
     }
   });
 
-  if (activeReduction) {
-    // Preis berechnen und auf 2 Nachkommastellen runden
-    const reducedPrice = +(priceGross * (1 - activeReduction.reductionPercent / 100)).toFixed(2);
-    return { reducedPrice, reductionPercent: activeReduction.reductionPercent };
+  if (matchingReduction) {
+    const reducedPrice = +(priceGross * (1 - matchingReduction.reductionPercent / 100)).toFixed(2);
+    return {
+      reducedPrice,
+      reductionPercent: matchingReduction.reductionPercent,
+      isActive: true,
+    };
   }
 
   return null;
