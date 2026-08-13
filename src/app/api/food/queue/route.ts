@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
 import { foodQueue } from "@/db/schema";
 import { getSession } from "@/lib/auth";
-import { eq } from "drizzle-orm";
+import { eq, and } from "drizzle-orm";
 
 export async function GET(req: NextRequest) {
   try {
@@ -39,7 +39,7 @@ export async function POST(req: NextRequest) {
       const existing = await db
         .select()
         .from(foodQueue)
-        .where(eq(foodQueue.tenantId, tenantId), eq(foodQueue.foodName, item.foodName))
+        .where(and(eq(foodQueue.tenantId, tenantId), eq(foodQueue.foodName, item.foodName)))
         .limit(1);
 
       if (existing.length > 0) {
