@@ -10,15 +10,15 @@ export async function GET(req: NextRequest) {
     if (!session) return NextResponse.json({ error: "Nicht autorisiert" }, { status: 401 });
     const tenantId = session.tenantId;
 
+    // ✅ FIX: foodStats hat Spalte "totalCooked", nicht "quantity"
     const stats = await db
       .select({
         foodName: foodStats.foodName,
-        totalCooked: sql<number>`sum(${foodStats.quantity})`.as("total_cooked"),
+        totalCooked: foodStats.totalCooked,
       })
       .from(foodStats)
       .where(eq(foodStats.tenantId, tenantId))
-      .groupBy(foodStats.foodName)
-      .orderBy(desc(sql`sum(${foodStats.quantity})`));
+      .orderBy(desc(foodStats.totalCooked));
 
     return NextResponse.json(stats);
   } catch (error) {
