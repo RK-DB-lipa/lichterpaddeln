@@ -20,11 +20,13 @@ export default function OrdersAnalytics() {
   const [error, setError] = useState<string | null>(null);
   const [selectedOrder, setSelectedOrder] = useState<any>(null);
 
-  // Filter States
+  // ✅ Erweiterte Filter States
   const [filterSalesPoint, setFilterSalesPoint] = useState("");
   const [filterCashier, setFilterCashier] = useState("");
-  const [filterDate, setFilterDate] = useState("");
-  const [filterHour, setFilterHour] = useState("");
+  const [filterDateFrom, setFilterDateFrom] = useState("");
+  const [filterDateTo, setFilterDateTo] = useState("");
+  const [filterTimeFrom, setFilterTimeFrom] = useState("");
+  const [filterTimeTo, setFilterTimeTo] = useState("");
 
   const getActiveFilters = useCallback((): Record<string, string> => {
     const filters: Record<string, string> = {};
@@ -33,10 +35,12 @@ export default function OrdersAnalytics() {
       filters["Verkaufsstelle"] = sp?.name || filterSalesPoint;
     }
     if (filterCashier) filters["Mitarbeiter"] = filterCashier;
-    if (filterDate) filters["Datum"] = filterDate;
-    if (filterHour) filters["Stunde"] = `${filterHour}:00 - ${filterHour}:59`;
+    if (filterDateFrom) filters["Datum von"] = filterDateFrom;
+    if (filterDateTo) filters["Datum bis"] = filterDateTo;
+    if (filterTimeFrom) filters["Uhrzeit von"] = filterTimeFrom;
+    if (filterTimeTo) filters["Uhrzeit bis"] = filterTimeTo;
     return filters;
-  }, [filterSalesPoint, filterCashier, filterDate, filterHour, salesPoints]);
+  }, [filterSalesPoint, filterCashier, filterDateFrom, filterDateTo, filterTimeFrom, filterTimeTo, salesPoints]);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -45,19 +49,12 @@ export default function OrdersAnalytics() {
       const params = new URLSearchParams();
       if (filterSalesPoint) params.set("salesPointId", filterSalesPoint);
       if (filterCashier) params.set("cashierName", filterCashier);
-      if (filterDate) {
-        params.set("fromDate", filterDate);
-        params.set("toDate", filterDate);
-        if (filterHour) {
-          params.set("fromTime", `${filterHour}:00`);
-          if (parseInt(filterHour) === 23) {
-            params.set("toTime", "23:59");
-          } else {
-            const endHour = (parseInt(filterHour) + 1) % 24;
-            params.set("toTime", `${String(endHour).padStart(2, "0")}:00`);
-          }
-        }
-      }
+      
+      // ✅ Von-Bis Logik für die API
+      if (filterDateFrom) params.set("fromDate", filterDateFrom);
+      if (filterTimeFrom) params.set("fromTime", filterTimeFrom);
+      if (filterDateTo) params.set("toDate", filterDateTo);
+      if (filterTimeTo) params.set("toTime", filterTimeTo);
       
       const qs = params.toString();
       const url = qs ? `/api/orders?${qs}` : "/api/orders";
@@ -87,7 +84,7 @@ export default function OrdersAnalytics() {
       setError(err.message);
     }
     setLoading(false);
-  }, [filterSalesPoint, filterCashier, filterDate, filterHour]);
+  }, [filterSalesPoint, filterCashier, filterDateFrom, filterDateTo, filterTimeFrom, filterTimeTo]);
 
   useEffect(() => {
     fetchData();
@@ -96,27 +93,12 @@ export default function OrdersAnalytics() {
   const fmt = (n: any) => (n || 0).toFixed(2) + " €";
 
   // Export Handlers
-  const handleExportOrdersCSV = () => {
-    exportOrdersCSV(orders, getActiveFilters());
-  };
-
-  const handleExportDrinksCSV = () => {
-    exportDrinksCSV(drinkSummary, getActiveFilters());
-  };
-
-  const handleExportFoodsCSV = () => {
-    exportFoodsCSV(foodSummary, getActiveFilters());
-  };
-
+  const handleExportOrdersCSV = () => exportOrdersCSV(orders, getActiveFilters());
+  const handleExportDrinksCSV = () => exportDrinksCSV(drinkSummary, getActiveFilters());
+  const handleExportFoodsCSV = () => exportFoodsCSV(foodSummary, getActiveFilters());
   const handleExportPDF = () => {
     exportPDFReport({
-      totals,
-      drinkSummary,
-      foodSummary,
-      salesPointSummary,
-      cashierSummary,
-      dailySummary,
-      orders,
+      totals, drinkSummary, foodSummary, salesPointSummary, cashierSummary, dailySummary, orders,
     }, getActiveFilters());
   };
 
@@ -145,9 +127,9 @@ export default function OrdersAnalytics() {
         </div>
       </div>
 
-      {/* Filter-Leiste */}
+      {/* ✅ Erweiterte Filter-Leiste */}
       <div className="bg-gray-800 rounded-xl p-3 border border-gray-700">
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
           <div>
             <label className="block text-xs text-gray-400 mb-1">Verkaufsstelle</label>
             <select value={filterSalesPoint} onChange={(e) => setFilterSalesPoint(e.target.value)} className="w-full bg-gray-700 text-white text-sm rounded-lg px-2 py-1.5 border border-gray-600">
@@ -163,25 +145,46 @@ export default function OrdersAnalytics() {
             </select>
           </div>
           <div>
-            <label className="block text-xs text-gray-400 mb-1">Datum</label>
-            <input type="date" value={filterDate} onChange={(e) => setFilterDate(e.target.value)} className="w-full bg-gray-700 text-white text-sm rounded-lg px-2 py-1.5 border border-gray-600" />
+            <label className="block text-xs text-gray-400 mb-1">Datum (von - bis)</label>
+            <div className="flex gap-1">
+              <input type="date" value={filterDateFrom} onChange={(e) => setFilterDateFrom(e.target.value)} className="w-1/2 bg-gray-700 text-white text-sm rounded-lg px-2 py-1.5 border border-gray-600" title="Von" />
+              <input type="date" value={filterDateTo} onChange={(e) => setFilterDateTo(e.target.value)} className="w-1/2 bg-gray-700 text-white text-sm rounded-lg px-2 py-1.5 border border-gray-600" title="Bis" />
+            </div>
           </div>
           <div>
-            <label className="block text-xs text-gray-400 mb-1">Stunde</label>
-            <select value={filterHour} onChange={(e) => setFilterHour(e.target.value)} disabled={!filterDate} className="w-full bg-gray-700 text-white text-sm rounded-lg px-2 py-1.5 border border-gray-600 disabled:opacity-50">
-              <option value="">Ganzer Tag</option>
-              {Array.from({ length: 24 }, (_, i) => String(i).padStart(2, "0")).map((h) => (<option key={h} value={h}>{h}:00 - {h}:59</option>))}
-            </select>
+            <label className="block text-xs text-gray-400 mb-1">Uhrzeit (von - bis)</label>
+            <div className="flex gap-1">
+              <select value={filterTimeFrom} onChange={(e) => setFilterTimeFrom(e.target.value)} className="w-1/2 bg-gray-700 text-white text-sm rounded-lg px-2 py-1.5 border border-gray-600">
+                <option value="">--:--</option>
+                {Array.from({ length: 24 }, (_, i) => String(i).padStart(2, "0") + ":00").map((h) => (<option key={h} value={h}>{h}</option>))}
+              </select>
+              <select value={filterTimeTo} onChange={(e) => setFilterTimeTo(e.target.value)} className="w-1/2 bg-gray-700 text-white text-sm rounded-lg px-2 py-1.5 border border-gray-600">
+                <option value="">--:--</option>
+                {Array.from({ length: 24 }, (_, i) => String(i).padStart(2, "0") + ":00").map((h) => (<option key={h} value={h}>{h}</option>))}
+              </select>
+            </div>
           </div>
         </div>
-        <div className="flex justify-between items-center mt-2">
-          {(filterSalesPoint || filterCashier || filterDate) ? (
-            <button onClick={() => { setFilterSalesPoint(""); setFilterCashier(""); setFilterDate(""); setFilterHour(""); }} className="text-xs text-red-400 hover:text-red-300">
-              ✕ Filter zurücksetzen
+        
+        <div className="flex justify-between items-center mt-3 pt-2 border-t border-gray-700/50">
+          {(filterSalesPoint || filterCashier || filterDateFrom || filterDateTo || filterTimeFrom || filterTimeTo) ? (
+            <button 
+              onClick={() => { 
+                setFilterSalesPoint(""); 
+                setFilterCashier(""); 
+                setFilterDateFrom(""); 
+                setFilterDateTo(""); 
+                setFilterTimeFrom(""); 
+                setFilterTimeTo(""); 
+              }} 
+              className="text-xs text-red-400 hover:text-red-300 font-bold"
+            >
+              ✕ Alle Filter zurücksetzen
             </button>
           ) : (
-            <span className="text-xs text-gray-500">Keine Filter aktiv</span>
+            <span className="text-xs text-gray-500">Keine Filter aktiv (zeigt alle Daten)</span>
           )}
+          
           <div className="flex gap-2">
             <button onClick={handleExportOrdersCSV} className="px-2 py-1 rounded-lg bg-green-700 hover:bg-green-600 text-xs font-bold">
               📥 Bestellungen CSV
@@ -466,7 +469,6 @@ export default function OrdersAnalytics() {
                 <div>
                   <h4 className="font-bold text-sm mb-2 text-blue-400">🍺 Getränke</h4>
                   <div className="space-y-1">
-                    {/* ✅ FIX: Typannotationen hinzugefügt */}
                     {selectedOrder.items.map((item: any, i: number) => (
                       <div key={i} className="flex justify-between text-sm bg-gray-700/30 rounded-lg px-3 py-2">
                         <span>{item.quantity}× {item.drinkName}</span>
@@ -481,7 +483,6 @@ export default function OrdersAnalytics() {
                 <div>
                   <h4 className="font-bold text-sm mb-2 text-green-400">🍔 Speisen</h4>
                   <div className="space-y-1">
-                    {/* ✅ FIX: Typannotationen hinzugefügt */}
                     {selectedOrder.foodItems.map((item: any, i: number) => (
                       <div key={i} className="flex justify-between text-sm bg-gray-700/30 rounded-lg px-3 py-2">
                         <span>{item.quantity}× {item.foodName}</span>
