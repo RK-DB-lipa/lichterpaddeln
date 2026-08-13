@@ -4,7 +4,6 @@ import { foodQueue, foodStats } from "@/db/schema";
 import { getSession } from "@/lib/auth";
 import { eq, and } from "drizzle-orm";
 
-// POST: Mark food as cooked (decrement queue, increment stats)
 export async function POST(req: NextRequest) {
   try {
     const session = await getSession();
@@ -15,44 +14,33 @@ export async function POST(req: NextRequest) {
     const { foodName } = body;
 
     if (!foodName) {
-      return NextResponse.json({ error: "foodName erforderlich" }, { status: 400 });
+      return NextResponse.json({ error: "foodName ist erforderlich" }, { status: 400 });
     }
 
+    // Queue reduzieren
     const existing = await db
       .select()
       .from(foodQueue)
       .where(and(eq(foodQueue.tenantId, tenantId), eq(foodQueue.foodName, foodName)))
       .limit(1);
 
-    if (existing.length === 0 || existing[0].quantity <= 0) {
-      return NextResponse.json({ error: "Nichts in der Queue" }, { status: 400 });
+    if (existing.length > 0) {
+      if (existing[0].quantity <= 1) {
+        await db.delete(foodQueue).where(eq(foodQueue.id, existing[0].id));
+      } else {
+        await db
+          .update(foodQueue)
+          .set({ quantity: existing[0].quantity - 1 })
+          .where(eq(foodQueue.id, existing[0].id));
+      }
     }
 
-    // Decrement queue
-    await db
-      .update(foodQueue)
-      .set({ quantity: existing[0].quantity - 1 })
-      .where(eq(foodQueue.id, existing[0].id));
-
-    // Increment stats
-    const stats = await db
-      .select()
-      .from(foodStats)
-      .where(and(eq(foodStats.tenantId, tenantId), eq(foodStats.foodName, foodName)))
-      .limit(1);
-
-    if (stats.length > 0) {
-      await db
-        .update(foodStats)
-        .set({ totalCooked: stats[0].totalCooked + 1 })
-        .where(eq(foodStats.id, stats[0].id));
-    } else {
-      await db.insert(foodStats).values({
-        tenantId,
-        foodName,
-        totalCooked: 1,
-      });
-    }
+    // Stats erhöhen
+    await db.insert(foodStats).values({
+      tenantId,
+      foodName,
+      quantity: 1,
+    });
 
     return NextResponse.json({ success: true });
   } catch (error) {
