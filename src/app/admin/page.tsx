@@ -600,6 +600,15 @@ export default function AdminPage() {
         {/*BESTELLUNGEN TAB}
          {activeTab === "orders" && <OrdersAnalytics />}
 
+         {/* TEST: Zeigt ob der orders-Tab funktioniert */}
+{activeTab === "orders" && (
+  <div className="p-4 bg-blue-900/50 border-4 border-blue-500 rounded-xl">
+    <h2 className="text-2xl font-bold">🔵 ORDERS TAB IST AKTIV!</h2>
+    <p>Wenn du diese blaue Box siehst, funktioniert der Tab-Block.</p>
+    <OrdersAnalytics />
+  </div>
+)}
+
          
         {/* EMPLOYEES TAB */}
         {activeTab === "employees" && (
