@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
 import { drinks, drinkSalesPoints, salesPoints } from "@/db/schema";
-import { getSession, getAuthAdmin } from "@/lib/auth";
+import { getSession } from "@/lib/auth";
 import { eq, and, sql } from "drizzle-orm";
 import { getReducedPrice } from "@/lib/priceReduction";
 
@@ -24,35 +24,33 @@ export async function GET(req: NextRequest) {
     const spAssignments = drinkIds.length > 0
       ? await db.select().from(drinkSalesPoints).where(sql`${drinkSalesPoints.drinkId} = ANY(ARRAY[${sql.join(drinkIds, sql`, `)}]::int[])`)
       : [];
+    
     const spByDrink = new Map<number, number[]>();
     for (const a of spAssignments) {
       if (!spByDrink.has(a.drinkId)) spByDrink.set(a.drinkId, []);
       spByDrink.get(a.drinkId)!.push(a.salesPointId);
     }
 
-    // Berechne reduzierte Preise für alle Drinks
-    let result = [];
-    for (const d of activeDrinks) {
-      const { reducedPrice, reductionPercent, isActive } = await getReducedPrice(
-        tenantId,
-        d.id,
-        "drink",
-        d.priceGross
-      );
-      
-      result.push({
-        ...d,
-        priceGross: d.priceGross,
-        reducedPrice: reducedPrice,
-        reductionPercent: reductionPercent,
-        hasReduction: isActive,
-        salesPointIds: spByDrink.get(d.id) || [],
-      });
-    }
+    // ✅ FIX: Sichere Verarbeitung des reduzierten Preises (kein Destructuring von null)
+    const result = await Promise.all(
+      activeDrinks.map(async (d) => {
+        const reduction = await getReducedPrice(tenantId, d.id, "drink", d.priceGross);
+        
+        return {
+          ...d,
+          priceGross: d.priceGross,
+          reducedPrice: reduction ? reduction.reducedPrice : undefined,
+          reductionPercent: reduction ? reduction.reductionPercent : undefined,
+          hasReduction: reduction ? reduction.isActive : false,
+          salesPointIds: spByDrink.get(d.id) || [],
+        };
+      })
+    );
 
     if (salesPointId) {
       const spId = parseInt(salesPointId);
-      result = result.filter((d) => !d.salesPointIds.length || d.salesPointIds.includes(spId));
+      const filteredResult = result.filter((d) => !d.salesPointIds.length || d.salesPointIds.includes(spId));
+      return NextResponse.json(filteredResult);
     }
 
     return NextResponse.json(result);
@@ -94,10 +92,8 @@ export async function POST(req: NextRequest) {
       group: group || null,
     };
 
-    // Auf aktuellem Tenant anlegen
     const [drink] = await db.insert(drinks).values({ tenantId, ...drinkData }).returning();
 
-    // Verkaufsstellen-Zuordnung auf aktuellem Tenant
     if (salesPointIds?.length > 0) {
       await db.insert(drinkSalesPoints).values(
         salesPointIds.map((spId: number) => ({ drinkId: drink.id, salesPointId: spId }))
@@ -122,11 +118,9 @@ export async function POST(req: NextRequest) {
         await db.update(drinks).set(drinkData).where(eq(drinks.id, otherDrinkId));
       }
       
-      // Verkaufsstellen synchronisieren
       if (salesPointIds) {
         await db.delete(drinkSalesPoints).where(eq(drinkSalesPoints.drinkId, otherDrinkId));
         if (salesPointIds.length > 0) {
-          // ID-Mapping: aktuelle SP-Namen → andere Tenant SP-IDs
           const currentSPs = await db.select().from(salesPoints).where(eq(salesPoints.tenantId, tenantId));
           const otherSPs = await db.select().from(salesPoints).where(eq(salesPoints.tenantId, otherTenantId));
           const idToName = new Map(currentSPs.map(sp => [sp.id, sp.name]));
