@@ -39,7 +39,12 @@ export async function POST(req: NextRequest) {
       const existing = await db
         .select()
         .from(foodQueue)
-        .where(and(eq(foodQueue.tenantId, tenantId), eq(foodQueue.foodName, item.foodName)))
+        .where(
+          and(
+            eq(foodQueue.tenantId, tenantId),
+            eq(foodQueue.foodName, item.foodName)
+          )
+        )
         .limit(1);
 
       if (existing.length > 0) {
