@@ -21,7 +21,12 @@ export async function POST(req: NextRequest) {
     const existing = await db
       .select()
       .from(foodQueue)
-      .where(and(eq(foodQueue.tenantId, tenantId), eq(foodQueue.foodName, foodName)))
+      .where(
+        and(
+          eq(foodQueue.tenantId, tenantId),
+          eq(foodQueue.foodName, foodName)
+        )
+      )
       .limit(1);
 
     if (existing.length > 0) {
@@ -35,11 +40,16 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // ✅ FIX: Stats erhöhen - foodStats hat Spalte "totalCooked", nicht "quantity"
+    // Stats erhöhen - foodStats hat Spalte "totalCooked", nicht "quantity"
     const existingStats = await db
       .select()
       .from(foodStats)
-      .where(and(eq(foodStats.tenantId, tenantId), eq(foodStats.foodName, foodName)))
+      .where(
+        and(
+          eq(foodStats.tenantId, tenantId),
+          eq(foodStats.foodName, foodName)
+        )
+      )
       .limit(1);
 
     if (existingStats.length > 0) {
