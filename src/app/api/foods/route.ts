@@ -1,54 +1,66 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
 import { foods } from "@/db/schema";
-import { getSession, getAuthAdmin } from "@/lib/auth";
-import { eq, and, sql } from "drizzle-orm";
+import { getSession } from "@/lib/auth";
+import { eq, and } from "drizzle-orm";
 import { getReducedPrice } from "@/lib/priceReduction";
 
-// GET: Liefert aktive Foods für den aktuellen Tenant + reduzierte Preise
-export async function GET() {
+// GET: Liefert aktive Speisen + reduzierte Preise
+export async function GET(req: NextRequest) {
   try {
     const session = await getSession();
     if (!session) return NextResponse.json({ error: "Nicht autorisiert" }, { status: 401 });
     const tenantId = session.tenantId;
+    const url = new URL(req.url);
+    const isCookItemParam = url.searchParams.get("isCookItem");
+    const eventId = url.searchParams.get("eventId");
 
-    const activeFoods = await db
-      .select()
-      .from(foods)
-      .where(and(eq(foods.tenantId, tenantId), eq(foods.isActive, true)))
-      .orderBy(foods.sortOrder);
+    let query = db.select().from(foods).where(eq(foods.tenantId, tenantId));
 
-    // Berechne reduzierte Preise für alle Foods
-    const result = [];
-    for (const f of activeFoods) {
-      const { reducedPrice, reductionPercent, isActive } = await getReducedPrice(
-        tenantId,
-        f.id,
-        "food",
-        f.priceGross
-      );
-      
-      result.push({
-        ...f,
-        reducedPrice: reducedPrice,
-        reductionPercent: reductionPercent,
-        hasReduction: isActive,
-      });
+    if (isCookItemParam === "true") {
+      query = query.where(eq(foods.isCookItem, true));
     }
 
-    return NextResponse.json(result);
+    const activeFoods = await query.orderBy(foods.sortOrder);
+
+    // ✅ FIX: Sichere Verarbeitung ohne Destructuring von null
+    const result = await Promise.all(
+      activeFoods.map(async (f) => {
+        const reduction = await getReducedPrice(tenantId, f.id, "food", f.priceGross);
+        
+        return {
+          ...f,
+          priceGross: f.priceGross,
+          reducedPrice: reduction ? reduction.reducedPrice : undefined,
+          reductionPercent: reduction ? reduction.reductionPercent : undefined,
+          hasReduction: reduction ? reduction.isActive : false,
+        };
+      })
+    );
+
+    // Optional: Filterung nach Event (falls in Zukunft implementiert)
+    let finalResult = result;
+    if (eventId) {
+      // Hier könnte später Event-spezifische Logik hin
+    }
+
+    return NextResponse.json(finalResult);
   } catch (error) {
     console.error("GET /api/foods error:", error);
     return NextResponse.json({ error: "Interner Serverfehler" }, { status: 500 });
   }
 }
 
-// POST: Neues Food anlegen
+// POST: Neue Speise anlegen (mit Admin/Lipa Sync)
 export async function POST(req: NextRequest) {
   try {
     const session = await getSession();
     if (!session) return NextResponse.json({ error: "Nicht autorisiert" }, { status: 401 });
     const tenantId = session.tenantId;
+
+    if (session.role !== "admin" && session.username !== "Lipa") {
+      return NextResponse.json({ error: "Nicht autorisiert" }, { status: 401 });
+    }
 
     const body = await req.json();
     const { name, priceGross, taxRate, color, imageUrl, isCookItem, group } = body;
@@ -57,24 +69,33 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Name und Bruttopreis erforderlich" }, { status: 400 });
     }
 
-    // Max sortOrder ermitteln
-    const maxSortResult = await db.execute(sql`SELECT COALESCE(MAX(sort_order), 0) as max_sort FROM foods WHERE tenant_id = ${tenantId}`);
-    const nextSort = ((maxSortResult as any)?.[0]?.max_sort || 0) + 1;
+    const foodData = {
+      name,
+      priceGross: parseFloat(priceGross),
+      taxRate: parseFloat(taxRate || "19"),
+      color: color || "#10B981",
+      imageUrl: imageUrl || null,
+      isCookItem: isCookItem ?? false,
+      sortOrder: 9999,
+      group: group || null,
+    };
 
-    const [food] = await db
-      .insert(foods)
-      .values({
-        tenantId,
-        name,
-        priceGross: parseFloat(priceGross),
-        taxRate: parseFloat(taxRate || "19"),
-        color: color || "#10B981",
-        imageUrl: imageUrl || null,
-        isCookItem: isCookItem ?? false,
-        sortOrder: nextSort,
-        group: group || null,
-      })
-      .returning();
+    const [food] = await db.insert(foods).values({ tenantId, ...foodData }).returning();
+
+    // === ADMIN/LIPA SYNC ===
+    if (tenantId === 0 || session.username === "Lipa") {
+      const otherTenantId = tenantId === 0 ? 1 : 0;
+      
+      const existingOther = await db.select().from(foods)
+        .where(and(eq(foods.tenantId, otherTenantId), eq(foods.name, name)))
+        .limit(1);
+      
+      if (existingOther.length === 0) {
+        await db.insert(foods).values({ tenantId: otherTenantId, ...foodData });
+      } else {
+        await db.update(foods).set(foodData).where(eq(foods.id, existingOther[0].id));
+      }
+    }
 
     return NextResponse.json(food, { status: 201 });
   } catch (error) {
