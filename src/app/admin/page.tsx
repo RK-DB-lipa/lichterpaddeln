@@ -282,7 +282,7 @@ export default function AdminPage() {
     setFoodFormError(""); setShowFoodForm(true);
   }
 
-  async function handleSaveEvent(e: React.FormEvent) {
+    async function handleSaveEvent(e: React.FormEvent) {
     e.preventDefault();
     setEventFormError("");
     
@@ -298,17 +298,18 @@ export default function AdminPage() {
       employeeDiscountPercent: eventFormData.employeeDiscountPercent || "0",
     };
 
-    // Dieser Log hilft uns gleich zu sehen, was wirklich gesendet wird
-    console.log("Sende an API:", data);
-
     try {
-      if (editingEvent) {
-        await api(`/api/events/${editingEvent.id}`, "PUT", data);
-      } else {
-        await api("/api/events", "POST", data);
-      }
-      console.log("✅ API ANTWORT:", response);
+      let response; // ✅ WICHTIG: Variable hier deklarieren!
       
+      if (editingEvent) {
+        response = await api(`/api/events/${editingEvent.id}`, "PUT", data);
+      } else {
+        response = await api("/api/events", "POST", data);
+      }
+      
+      // ✅ Jetzt kennt TypeScript die Variable 'response'
+      console.log("✅ API ANTWORT:", response);
+
       setShowEventForm(false);
       setEditingEvent(null);
       fetchEvents();
