@@ -299,7 +299,15 @@ export default function AdminPage() {
         endDate: eventFormData.endDate,
         employeeDiscountPercent: eventFormData.employeeDiscountPercent || "0",
       };
-      
+      console.log("Sende an API:", data);
+
+  try {
+    if (editingEvent) {
+      await api(`/api/events/${editingEvent.id}`, "PUT", data);
+    } else {
+      await api("/api/events", "POST", data);
+    }
+    
       if (editingEvent) {
         await api(`/api/events/${editingEvent.id}`, "PUT", data);
       } else {
