@@ -349,7 +349,7 @@ export default function POSPage() {
     return {
       original: drink.priceGross,
       current: basePrice,
-      hasDiscount: drink.hasReduction && drink.reducedPrice !== undefined,
+      hasDiscount: !!(drink.hasReduction && drink.reducedPrice !== undefined),
     };
   };
 
