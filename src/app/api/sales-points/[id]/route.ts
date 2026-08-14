@@ -45,10 +45,33 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
     const { id } = await params;
     const tenantId = session.tenantId;
 
+    // Hole die Verkaufsstelle, um den Namen für den Sync zu kennen
+    const [spToDelete] = await db
+      .select()
+      .from(salesPoints)
+      .where(and(eq(salesPoints.id, parseInt(id)), eq(salesPoints.tenantId, tenantId)))
+      .limit(1);
+
+    if (!spToDelete) {
+      return NextResponse.json({ error: "Verkaufsstelle nicht gefunden" }, { status: 404 });
+    }
+
+    // 1. Soft-Delete im aktuellen Tenant
     await db
       .update(salesPoints)
       .set({ isActive: false })
-      .where(and(eq(salesPoints.id, parseInt(id)), eq(salesPoints.tenantId, tenantId)));
+      .where(eq(salesPoints.id, parseInt(id)));
+
+    // 2. === LIPA / TENANT 0 SYNC ===
+    if (tenantId === 0 || session.username === "Lipa") {
+      const otherTenantId = tenantId === 0 ? 1 : 0;
+      
+      // Soft-Delete im anderen Tenant (anhand des Namens)
+      await db
+        .update(salesPoints)
+        .set({ isActive: false })
+        .where(and(eq(salesPoints.tenantId, otherTenantId), eq(salesPoints.name, spToDelete.name)));
+    }
 
     return NextResponse.json({ success: true });
   } catch (error) {
