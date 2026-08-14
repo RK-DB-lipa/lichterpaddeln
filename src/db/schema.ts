@@ -16,6 +16,8 @@ export const managedUsers = pgTable("managed_users", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
+
+
 // Employee table - represents a real person
 export const employees = pgTable("employees", {
   id: serial("id").primaryKey(),
@@ -149,6 +151,7 @@ export const events = pgTable("events", {
   startDate: timestamp("start_date").notNull(),
   endDate: timestamp("end_date").notNull(),
   isActive: boolean("is_active").notNull().default(true),
+  employeeDiscountPercent: real("employee_discount_percent").notNull().default(0),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
