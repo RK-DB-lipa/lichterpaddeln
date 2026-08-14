@@ -533,7 +533,7 @@ export default function AdminPage() {
         {activeTab === "events" && (
           <div>
             <div className="flex justify-between items-center mb-4"><h2 className="text-lg font-bold">Events</h2>
-              <button onClick={() => { setEditingEvent(null); setEventFormData({ name: "", startDate: "", endDate: "" }); setEventFormError(""); setShowEventForm(true); }} className="px-4 py-2 rounded-xl bg-green-600 hover:bg-green-500 font-bold text-sm">+ Neues Event</button></div>
+              <button onClick={() => { setEditingEvent(null); setEventFormData({ name: "", startDate: "", endDate: "", employeeDiscountPercent: "" }); setEventFormError(""); setShowEventForm(true); }} className="px-4 py-2 rounded-xl bg-green-600 hover:bg-green-500 font-bold text-sm">+ Neues Event</button></div>
             <div className="space-y-2">
               {events.map((ev) => (
                 <div key={ev.id} className="bg-gray-800 rounded-xl p-4 border border-gray-700">
