@@ -552,7 +552,16 @@ export default function AdminPage() {
                   <div className="flex gap-2 flex-wrap">
                     <button onClick={() => openAssignDialog(ev.id, "drinks")} className="px-3 py-1.5 rounded-lg bg-amber-700 hover:bg-amber-600 text-xs font-bold">🍺 Getränke zuweisen</button>
                     <button onClick={() => openAssignDialog(ev.id, "foods")} className="px-3 py-1.5 rounded-lg bg-green-700 hover:bg-green-600 text-xs font-bold">🍔 Speisen zuweisen</button>
-                    <button onClick={() => { setEditingEvent(ev); setEventFormData({ name: ev.name, startDate: new Date(ev.startDate).toISOString().split("T")[0], endDate: new Date(ev.endDate).toISOString().split("T")[0] }); setEventFormError(""); setShowEventForm(true); }} className="px-3 py-1.5 rounded-lg bg-gray-600 hover:bg-gray-500 text-xs font-bold">✏️ Bearbeiten</button>
+                    <button onClick={() => { setEditingEvent(ev); 
+  setEventFormData({ 
+    name: ev.name, 
+    startDate: new Date(ev.startDate).toISOString().split("T")[0], 
+    endDate: new Date(ev.endDate).toISOString().split("T")[0],
+    employeeDiscountPercent: ev.employeeDiscountPercent?.toString() || "" // ✅ NEU
+  }); 
+  setEventFormError(""); 
+  setShowEventForm(true); 
+}} className="px-3 py-1.5 rounded-lg bg-gray-600 hover:bg-gray-500 text-xs font-bold">✏️ Bearbeiten</button>
                     <button onClick={() => handleDeleteEvent(ev.id)} className="px-3 py-1.5 rounded-lg bg-red-900/50 hover:bg-red-800/50 text-xs font-bold">🗑️ Löschen</button>
                   </div>
                 </div>
