@@ -37,8 +37,6 @@ export async function POST(req: NextRequest) {
     const tenantId = session.tenantId;
 
     const body = await req.json();
-    console.log("🔵 API POST - Empfangener Body:", body); // <-- DEBUG LOG
-    
     const { name, startDate, endDate, employeeDiscountPercent } = body;
 
     if (!name || !startDate || !endDate) {
@@ -46,7 +44,6 @@ export async function POST(req: NextRequest) {
     }
 
     const discountValue = parseFloat(employeeDiscountPercent || "0");
-    console.log("🔵 API POST - Geparster Rabatt-Wert:", discountValue); // <-- DEBUG LOG
 
     const [event] = await db
       .insert(events)
@@ -55,14 +52,13 @@ export async function POST(req: NextRequest) {
         name,
         startDate: new Date(startDate),
         endDate: new Date(endDate),
-        employeeDiscountPercent: discountValue, // <-- HIER WIRD ES GESPEICHERT
+        employeeDiscountPercent: discountValue,
       })
       .returning();
 
-    console.log("🟢 API POST - Erfolgreich in DB gespeichert:", event); // <-- DEBUG LOG
-    return NextResponse.json(event, { status: 201 });
+    return NextResponse.json({ ...event, debug: { received: body, parsed: discountValue } }, { status: 201 });
   } catch (error) {
-    console.error("🔴 API POST error:", error);
+    console.error("POST /api/events error:", error);
     return NextResponse.json({ error: "Interner Serverfehler: " + error }, { status: 500 });
   }
 }
@@ -77,8 +73,6 @@ export async function PUT(req: NextRequest) {
     if (!eventId) return NextResponse.json({ error: "Event-ID erforderlich" }, { status: 400 });
 
     const body = await req.json();
-    console.log("🔵 API PUT - Empfangener Body:", body); // <-- DEBUG LOG
-    
     const { name, startDate, endDate, isActive, employeeDiscountPercent } = body;
 
     const updateData: any = {};
@@ -91,18 +85,23 @@ export async function PUT(req: NextRequest) {
       updateData.employeeDiscountPercent = parseFloat(employeeDiscountPercent || "0");
     }
 
-    console.log("🔵 API PUT - Update Data für DB:", updateData); // <-- DEBUG LOG
-
     const [updatedEvent] = await db
       .update(events)
       .set(updateData)
       .where(eq(events.id, parseInt(eventId)))
       .returning();
 
-    console.log("🟢 API PUT - Erfolgreich in DB aktualisiert:", updatedEvent); // <-- DEBUG LOG
-    return NextResponse.json(updatedEvent);
+    // ✅ DEBUG: Wir senden die verarbeiteten Daten zurück an das Frontend!
+    return NextResponse.json({ 
+      success: true, 
+      updatedEvent,
+      debug: {
+        receivedBody: body,
+        updateDataSentToDB: updateData
+      }
+    });
   } catch (error) {
-    console.error("🔴 API PUT error:", error);
+    console.error("PUT /api/events error:", error);
     return NextResponse.json({ error: "Interner Serverfehler: " + error }, { status: 500 });
   }
 }
