@@ -283,20 +283,36 @@ export default function AdminPage() {
   }
 
   async function handleSaveEvent(e: React.FormEvent) {
-  e.preventDefault(); setEventFormError("");
-  if (!eventFormData.name || !eventFormData.startDate || !eventFormData.endDate) { setEventFormError("Alle Felder erforderlich"); return; }
-  try {
-    const data = {
-      name: eventFormData.name,
-      startDate: eventFormData.startDate,
-      endDate: eventFormData.endDate,
-      employeeDiscountPercent: eventFormData.employeeDiscountPercent || "0",
-    };
-    if (editingEvent) await api(`/api/events/${editingEvent.id}`, "PUT", data);
-    else await api("/api/events", "POST", data);
-    setShowEventForm(false); setEditingEvent(null); fetchEvents();
-  } catch (err: any) { setEventFormError(err.message || "Fehler beim Speichern"); }
-}
+    e.preventDefault(); 
+    setEventFormError("");
+    
+    if (!eventFormData.name || !eventFormData.startDate || !eventFormData.endDate) { 
+      setEventFormError("Name, Start- und Enddatum sind erforderlich"); 
+      return; 
+    }
+    
+    try {
+      // ✅ WICHTIG: Das neue Feld muss hier explizit mitgesendet werden!
+      const data = {
+        name: eventFormData.name,
+        startDate: eventFormData.startDate,
+        endDate: eventFormData.endDate,
+        employeeDiscountPercent: eventFormData.employeeDiscountPercent || "0",
+      };
+      
+      if (editingEvent) {
+        await api(`/api/events/${editingEvent.id}`, "PUT", data);
+      } else {
+        await api("/api/events", "POST", data);
+      }
+      
+      setShowEventForm(false); 
+      setEditingEvent(null); 
+      fetchEvents(); // Lädt die Liste neu, damit der Rabatt sofort sichtbar ist
+    } catch (err: any) { 
+      setEventFormError(err.message || "Fehler beim Speichern"); 
+    }
+  }
 
   async function handleDeleteEvent(id: number) {
     if (!confirm("Event wirklich löschen? Alle Zuordnungen gehen verloren!")) return;
