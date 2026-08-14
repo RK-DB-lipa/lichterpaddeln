@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback, useRef } from "react";
 
 type Drink = { id: number; name: string; priceGross: number; taxRate: number; hasDeposit: boolean; depositAmount: number; cupSize: string; color: string; imageUrl: string | null; isPourDrink: boolean; salesPointIds?: number[]; group?: string | null; reducedPrice?: number; reductionPercent?: number; hasReduction?: boolean; };
 type Food = { id: number; name: string; priceGross: number; taxRate: number; color: string; imageUrl: string | null; isCookItem: boolean; group?: string | null; reducedPrice?: number; reductionPercent?: number; hasReduction?: boolean; };
-type Event = { id: number; name: string; startDate: string; endDate: string; isActive: boolean; drinkCount: number; foodCount: number };
+type Event = { id: number; name: string; startDate: string; endDate: string; isActive: boolean; drinkCount: number; foodCount: number; employeeDiscountPercent?: number };
 type SalesPoint = { id: number; name: string };
 type OrderItem = { drinkId: number; drinkName: string; quantity: number; unitPriceGross: number; unitDeposit: number };
 type FoodOrderItem = { foodId: number; foodName: string; quantity: number; unitPriceGross: number };
@@ -50,14 +50,15 @@ export default function POSPage() {
   const receiptRef = useRef<HTMLDivElement>(null);
   const wakeLockRef = useRef<any>(null);
 
+  // Aufklappbare Gruppen
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
+
+  // ✅ NEU: Mitarbeiter-Modus und Ohne-Pfand-Option
+  const [isEmployee, setIsEmployee] = useState(false);
+  const [noDeposit, setNoDeposit] = useState(false);
 
   const items = Array.from(orderItems.values());
   const foodItems = Array.from(orderFoodItems.values());
-// ✅ NEU: Mitarbeiter-Modus und Ohne-Pfand-Option
-const [isEmployee, setIsEmployee] = useState(false);
-const [noDeposit, setNoDeposit] = useState(false);
-  
 
   useEffect(() => { checkAuth(); }, []);
   async function checkAuth() { try { const r = await fetch("/api/auth/me"); setSession(r.ok ? await r.json() : null); } catch { setSession(null); } }
@@ -117,34 +118,39 @@ const [noDeposit, setNoDeposit] = useState(false);
 
   useEffect(() => { if (session?.authenticated && selectedSalesPointId) { fetchDrinks(); fetchFoods(); } }, [session?.authenticated, selectedSalesPointId, selectedEventId]);
 
-  const addDrink = useCallback((drink: Drink) => {
-  setPourSent(false);
-  
-  // Basis-Preis (mit eventueller Preisreduktion)
-  let priceToUse = drink.hasReduction && drink.reducedPrice !== undefined ? drink.reducedPrice : drink.priceGross;
-  
-  // ✅ NEU: Mitarbeiter-Rabatt anwenden (nur auf Getränk, NICHT auf Pfand)
-  if (isEmployee && selectedEventId) {
+  // ✅ NEU: Hilfsfunktion für Mitarbeiter-Rabatt
+  const getEmployeeDiscountPercent = useCallback((): number => {
+    if (!isEmployee || !selectedEventId) return 0;
     const currentEvent = events.find((e) => e.id === selectedEventId);
-    if (currentEvent && currentEvent.employeeDiscountPercent > 0) {
-      priceToUse = +(priceToUse * (1 - currentEvent.employeeDiscountPercent / 100)).toFixed(2);
+    return currentEvent?.employeeDiscountPercent || 0;
+  }, [isEmployee, selectedEventId, events]);
+
+  const addDrink = useCallback((drink: Drink) => {
+    setPourSent(false);
+    
+    // Basis-Preis (mit eventueller Preisreduktion)
+    let priceToUse = drink.hasReduction && drink.reducedPrice !== undefined ? drink.reducedPrice : drink.priceGross;
+    
+    // ✅ NEU: Mitarbeiter-Rabatt anwenden (nur auf Getränk, NICHT auf Pfand)
+    const discountPercent = getEmployeeDiscountPercent();
+    if (discountPercent > 0) {
+      priceToUse = +(priceToUse * (1 - discountPercent / 100)).toFixed(2);
     }
-  }
-  
-  // ✅ NEU: Pfand-Berechnung (0 wenn "Ohne Pfand" aktiv)
-  const depositToUse = noDeposit ? 0 : (drink.hasDeposit ? drink.depositAmount : 0);
-  
-  setOrderItems((prev) => {
-    const next = new Map(prev);
-    const existing = next.get(drink.id);
-    if (existing) {
-      next.set(drink.id, { ...existing, quantity: existing.quantity + 1 });
-    } else {
-      next.set(drink.id, { drinkId: drink.id, drinkName: drink.name, quantity: 1, unitPriceGross: priceToUse, unitDeposit: depositToUse });
-    }
-    return next;
-  });
-}, [isEmployee, selectedEventId, events, noDeposit]);
+    
+    // ✅ NEU: Pfand-Berechnung (0 wenn "Ohne Pfand" aktiv)
+    const depositToUse = noDeposit ? 0 : (drink.hasDeposit ? drink.depositAmount : 0);
+    
+    setOrderItems((prev) => {
+      const next = new Map(prev);
+      const existing = next.get(drink.id);
+      if (existing) {
+        next.set(drink.id, { ...existing, quantity: existing.quantity + 1 });
+      } else {
+        next.set(drink.id, { drinkId: drink.id, drinkName: drink.name, quantity: 1, unitPriceGross: priceToUse, unitDeposit: depositToUse });
+      }
+      return next;
+    });
+  }, [getEmployeeDiscountPercent, noDeposit]);
 
   const addFood = useCallback((food: Food) => {
     const priceToUse = food.hasReduction && food.reducedPrice !== undefined ? food.reducedPrice : food.priceGross;
@@ -314,7 +320,6 @@ const [noDeposit, setNoDeposit] = useState(false);
   const handoutAllItems = handout ? handout.items.length + handout.foodItems.length : 0;
   const handoutAllDone = handout !== null && handoutCheckedCount === handoutAllItems;
 
-  // ✅ NEU: Funktion zum Auf-/Zuklappen von Gruppen
   const toggleGroup = useCallback((groupName: string) => {
     setCollapsedGroups((prev) => {
       const next = new Set(prev);
@@ -326,6 +331,27 @@ const [noDeposit, setNoDeposit] = useState(false);
       return next;
     });
   }, []);
+
+  // ✅ NEU: Hilfsfunktion für Preis-Anzeige mit Mitarbeiter-Rabatt
+  const getDisplayPrice = (drink: Drink): { original: number; current: number; hasDiscount: boolean } => {
+    const basePrice = drink.hasReduction && drink.reducedPrice !== undefined ? drink.reducedPrice : drink.priceGross;
+    const discountPercent = getEmployeeDiscountPercent();
+    
+    if (discountPercent > 0) {
+      const discountedPrice = +(basePrice * (1 - discountPercent / 100)).toFixed(2);
+      return {
+        original: drink.priceGross,
+        current: discountedPrice,
+        hasDiscount: true,
+      };
+    }
+    
+    return {
+      original: drink.priceGross,
+      current: basePrice,
+      hasDiscount: drink.hasReduction && drink.reducedPrice !== undefined,
+    };
+  };
 
   if (session === undefined) return <div className="h-screen bg-gray-900 flex items-center justify-center text-white"><p>Laden...</p></div>;
 
@@ -363,6 +389,29 @@ const [noDeposit, setNoDeposit] = useState(false);
               {events.map((ev) => (<option key={ev.id} value={ev.id}>{ev.name}</option>))}
             </select>
           )}
+          
+          {/* ✅ NEU: Mitarbeiter-Checkbox */}
+          <label className={`flex items-center gap-1 text-xs rounded-lg px-2 py-1 border cursor-pointer transition-all ${isEmployee ? "bg-purple-600 border-purple-400 text-white" : "bg-purple-700/50 hover:bg-purple-600/50 border-purple-500 text-purple-200"}`}>
+            <input 
+              type="checkbox" 
+              checked={isEmployee} 
+              onChange={(e) => setIsEmployee(e.target.checked)} 
+              className="w-3 h-3"
+            />
+            <span className="font-bold">MITARBEITER</span>
+          </label>
+
+          {/* ✅ NEU: Ohne-Pfand-Checkbox */}
+          <label className={`flex items-center gap-1 text-xs rounded-lg px-2 py-1 border cursor-pointer transition-all ${noDeposit ? "bg-amber-600 border-amber-400 text-white" : "bg-amber-700/50 hover:bg-amber-600/50 border-amber-500 text-amber-200"}`}>
+            <input 
+              type="checkbox" 
+              checked={noDeposit} 
+              onChange={(e) => setNoDeposit(e.target.checked)} 
+              className="w-3 h-3"
+            />
+            <span className="font-bold">Ohne Pfand</span>
+          </label>
+
           <a href="/zapf" className="text-xs bg-gray-700 hover:bg-gray-600 rounded-lg px-2 py-1 border border-gray-600 font-bold transition-colors">🍺 Zapf</a>
           {foods.some(f => f.isCookItem) && <a href="/koch" className="text-xs bg-orange-700 hover:bg-orange-600 rounded-lg px-2 py-1 border border-orange-500 font-bold transition-colors">🍳 Koch</a>}
           <select value={selectedSalesPointId ?? ""} onChange={(e) => setSelectedSalesPointId(parseInt(e.target.value))} className="bg-gray-700 text-white text-xs md:text-sm rounded-lg px-2 py-1 border border-gray-600 focus:border-blue-500 focus:outline-none">
@@ -372,6 +421,18 @@ const [noDeposit, setNoDeposit] = useState(false);
           <button onClick={handleLogout} className="text-[10px] text-red-400 hover:text-red-300 ml-0.5" title="Abmelden">🚪</button>
         </div>
       </header>
+
+      {/* ✅ NEU: Info-Banner wenn Mitarbeiter-Modus aktiv */}
+      {isEmployee && getEmployeeDiscountPercent() > 0 && (
+        <div className="bg-purple-700/40 border-b border-purple-500 px-3 py-1 text-xs text-purple-200 text-center font-bold">
+          💼 Mitarbeiter-Modus aktiv · {getEmployeeDiscountPercent()}% Rabatt auf Getränke (nicht auf Pfand)
+        </div>
+      )}
+      {isEmployee && getEmployeeDiscountPercent() === 0 && (
+        <div className="bg-amber-700/40 border-b border-amber-500 px-3 py-1 text-xs text-amber-200 text-center font-bold">
+          ⚠️ Mitarbeiter-Modus aktiv, aber kein Rabatt für das aktuelle Event hinterlegt
+        </div>
+      )}
 
       <div className="flex flex-1 overflow-hidden relative" style={{ minHeight: 0 }}>
         <aside className="w-14 md:w-16 shrink-0 bg-gray-800/90 border-r border-gray-700 flex flex-col items-center py-1.5 gap-1 overflow-y-auto z-30">
@@ -410,6 +471,7 @@ const [noDeposit, setNoDeposit] = useState(false);
                   if (currentGroup) lastGroup = currentGroup;
                   
                   const isCollapsed = currentGroup ? collapsedGroups.has(currentGroup) : false;
+                  const displayPrice = getDisplayPrice(drink);
 
                   return (
                     <div key={drink.id} className="contents">
@@ -448,19 +510,21 @@ const [noDeposit, setNoDeposit] = useState(false);
                           <div className="font-extrabold text-sm md:text-base leading-tight drop-shadow-md">{drink.name}</div>
                           <div className="mt-auto">
                             <div className="text-lg md:text-xl font-extrabold drop-shadow-md">
-                              {drink.hasReduction && drink.reducedPrice !== undefined ? (
+                              {displayPrice.hasDiscount ? (
                                 <>
-                                  <span className="text-sm line-through opacity-60 mr-1">{drink.priceGross.toFixed(2)} €</span>
-                                  <span className="text-green-400">{drink.reducedPrice.toFixed(2)} €</span>
+                                  <span className="text-sm line-through opacity-60 mr-1">{displayPrice.original.toFixed(2)} €</span>
+                                  <span className={isEmployee ? "text-purple-400" : "text-green-400"}>{displayPrice.current.toFixed(2)} €</span>
                                 </>
                               ) : (
                                 drink.priceGross.toFixed(2) + " €"
                               )}
                             </div>
-                            {drink.hasDeposit && <div className="text-[10px] opacity-80 mt-0.5 drop-shadow">+ {drink.depositAmount.toFixed(2)} € Pfand</div>}
+                            {drink.hasDeposit && !noDeposit && <div className="text-[10px] opacity-80 mt-0.5 drop-shadow">+ {drink.depositAmount.toFixed(2)} € Pfand</div>}
+                            {drink.hasDeposit && noDeposit && <div className="text-[10px] opacity-80 mt-0.5 drop-shadow text-amber-400">Kein Pfand</div>}
                             <div className="text-[9px] opacity-60 mt-0.5">
                               {drink.taxRate}% MwSt.
                               {drink.hasReduction && drink.reductionPercent && <span className="ml-1 text-green-400 font-bold">-{drink.reductionPercent}%</span>}
+                              {isEmployee && getEmployeeDiscountPercent() > 0 && <span className="ml-1 text-purple-400 font-bold">· MA -{getEmployeeDiscountPercent()}%</span>}
                             </div>
                           </div>
                         </button>
@@ -571,6 +635,7 @@ const [noDeposit, setNoDeposit] = useState(false);
               <p className="text-3xl font-extrabold text-green-400 tabular-nums">{grandTotal.toFixed(2)} €</p>
               {netDeposit !== 0 && <p className="text-xs text-amber-400">(inkl. Pfand: {netDeposit > 0 ? "+" : ""}{netDeposit.toFixed(2)} €)</p>}
               <p className="text-xs text-gray-400">{totalDrinksCount} Getränke · {totalFoodsCount} Speisen · {items.length + foodItems.length} Positionen</p>
+              {isEmployee && getEmployeeDiscountPercent() > 0 && <p className="text-xs text-purple-400 mt-1">💼 Mitarbeiter-Rabatt: -{getEmployeeDiscountPercent()}%</p>}
             </div>
             
             {hasPourDrinks && !pourSent && (
@@ -655,7 +720,7 @@ const [noDeposit, setNoDeposit] = useState(false);
               <p className="text-xs text-gray-400 text-center mt-1">{handout.salesPointName} · {handout.totalGross.toFixed(2)} €{handout.depositReturnedCount > 0 && <span className="text-amber-400"> · {handout.depositReturnedCount} Becher zurück</span>}</p>
             </div>
             <div className="flex-1 overflow-y-auto p-3 space-y-2">
-              {handout.items.map((item) => { 
+              {handout.items.map((item: any) => { 
                 const done = !!handout.checked[item.drinkId]; 
                 const dc = drinks.find((d) => d.id === item.drinkId)?.color || "#6B7280"; 
                 return (
@@ -672,7 +737,7 @@ const [noDeposit, setNoDeposit] = useState(false);
                   </button>
                 );
               })}
-              {handout.foodItems.map((item) => { 
+              {handout.foodItems.map((item: any) => { 
                 const done = !!handout.checked[-item.foodId]; 
                 const fc = foods.find((f) => f.id === item.foodId)?.color || "#10B981"; 
                 return (
