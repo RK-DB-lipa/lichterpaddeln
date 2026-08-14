@@ -73,17 +73,20 @@ export async function PUT(req: NextRequest) {
     if (!eventId) return NextResponse.json({ error: "Event-ID erforderlich" }, { status: 400 });
 
     const body = await req.json();
-    const { name, startDate, endDate, isActive, employeeDiscountPercent } = body;
-
-    const updateData: any = {};
-    if (name !== undefined) updateData.name = name;
-    if (startDate !== undefined) updateData.startDate = new Date(startDate);
-    if (endDate !== undefined) updateData.endDate = new Date(endDate);
-    if (isActive !== undefined) updateData.isActive = isActive;
     
-    if (employeeDiscountPercent !== undefined) {
-      updateData.employeeDiscountPercent = parseFloat(employeeDiscountPercent || "0");
-    }
+    // Wir erzwingen hier die Zahl, egal ob String oder Number ankommt
+    const rawDiscount = body.employeeDiscountPercent;
+    const parsedDiscount = rawDiscount === undefined ? 0 : parseFloat(String(rawDiscount));
+
+    const updateData: any = {
+      // Wir setzen es IMMER, damit wir sicher sind, dass Drizzle es versucht zu aktualisieren
+      employeeDiscountPercent: parsedDiscount,
+    };
+
+    if (body.name !== undefined) updateData.name = body.name;
+    if (body.startDate !== undefined) updateData.startDate = new Date(body.startDate);
+    if (body.endDate !== undefined) updateData.endDate = new Date(body.endDate);
+    if (body.isActive !== undefined) updateData.isActive = body.isActive;
 
     const [updatedEvent] = await db
       .update(events)
@@ -91,12 +94,14 @@ export async function PUT(req: NextRequest) {
       .where(eq(events.id, parseInt(eventId)))
       .returning();
 
-    // ✅ DEBUG: Wir senden die verarbeiteten Daten zurück an das Frontend!
+    // Wir senden ALLES zurück, damit du es in der Chrome-Konsole siehst
     return NextResponse.json({ 
       success: true, 
       updatedEvent,
       debug: {
         receivedBody: body,
+        rawDiscount,
+        parsedDiscount,
         updateDataSentToDB: updateData
       }
     });
