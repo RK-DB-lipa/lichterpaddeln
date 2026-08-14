@@ -780,26 +780,30 @@ export default function AdminPage() {
                 <div><label className="block text-sm text-gray-400 mb-1">Startdatum *</label><input type="date" value={eventFormData.startDate} onChange={(e)=>setEventFormData({...eventFormData, startDate: e.target.value})} className="w-full px-4 py-2.5 rounded-xl bg-gray-700 text-white border border-gray-600 focus:border-blue-500 focus:outline-none" /></div>
                 <div><label className="block text-sm text-gray-400 mb-1">Enddatum *</label><input type="date" value={eventFormData.endDate} onChange={(e)=>setEventFormData({...eventFormData, endDate: e.target.value})} className="w-full px-4 py-2.5 rounded-xl bg-gray-700 text-white border border-gray-600 focus:border-blue-500 focus:outline-none" /></div>
               </div>
-              <div>
-          <label className="block text-sm text-gray-400 mb-1">Mitarbeiter-Rabatt (%)</label>
-          <input 
-            type="number" 
-            min="0" 
-            max="100" 
-            step="0.1"
-            value={eventFormData.employeeDiscountPercent || ""} 
-            onChange={(e) => setEventFormData({ ...eventFormData, employeeDiscountPercent: e.target.value })} 
-            className="w-full px-3 py-2 rounded-lg bg-gray-700 text-white border border-gray-600 focus:border-blue-500 focus:outline-none" 
-            placeholder="0"
-          />
-          <p className="text-xs text-gray-500 mt-1">Rabatt in Prozent für Mitarbeiter (z.B. 20 für 20% Rabatt auf Getränke)</p>
-        </div>
-      </div>
-            </div>
-            <div className="flex gap-3 mt-6"><button type="button" onClick={()=>setShowEventForm(false)} className="flex-1 py-3 rounded-xl font-bold bg-gray-600 hover:bg-gray-500">Abbrechen</button><button type="submit" className="flex-1 py-3 rounded-xl font-bold bg-amber-600 hover:bg-amber-500">Speichern</button></div>
-          </form>
-        </div>
-      )}
+              {/* ✅ NEU: Mitarbeiter-Rabatt (korrekt eingebettet) */}
+                <div className="mt-3">
+                  <label className="block text-sm text-gray-400 mb-1">Mitarbeiter-Rabatt (%)</label>
+                  <input 
+                    type="number" 
+                    min="0" 
+                    max="100" 
+                    step="0.1"
+                    value={eventFormData.employeeDiscountPercent || ""} 
+                    onChange={(e) => setEventFormData({ ...eventFormData, employeeDiscountPercent: e.target.value })} 
+                    className="w-full px-3 py-2 rounded-lg bg-gray-700 text-white border border-gray-600 focus:border-blue-500 focus:outline-none" 
+                    placeholder="0"
+                  />
+                  <p className="text-xs text-gray-500 mt-1">Rabatt in Prozent für Mitarbeiter (z.B. 20 für 20% Rabatt auf Getränke)</p>
+                </div>
+              </div>
+
+              <div className="flex gap-3 mt-6">
+                <button type="button" onClick={() => { setShowEventForm(false); setEditingEvent(null); }} className="flex-1 py-3 rounded-xl font-bold bg-gray-600 hover:bg-gray-500">Abbrechen</button>
+                <button type="submit" className="flex-1 py-3 rounded-xl font-bold bg-amber-600 hover:bg-amber-500">Speichern</button>
+              </div>
+            </form>
+          </div>
+        )}
 
       {/* Event Assign Dialog */}
       {showEventAssignDialog && assignEventId && (
