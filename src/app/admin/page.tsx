@@ -34,7 +34,7 @@ export default function AdminPage() {
   const [events, setEvents] = useState<Event[]>([]);
   const [editingEvent, setEditingEvent] = useState<Event | null>(null);
   const [showEventForm, setShowEventForm] = useState(false);
-  const [eventFormData, setEventFormData] = useState({ name: "", startDate: "", endDate: "" });
+  const [eventFormData, setEventFormData] = useState({ name: "", startDate: "", endDate: "", employeeDiscountPercent: "" });
   const [eventFormError, setEventFormError] = useState("");
   const [showEventAssignDialog, setShowEventAssignDialog] = useState(false);
   const [assignEventId, setAssignEventId] = useState<number | null>(null);
@@ -283,14 +283,20 @@ export default function AdminPage() {
   }
 
   async function handleSaveEvent(e: React.FormEvent) {
-    e.preventDefault(); setEventFormError("");
-    if (!eventFormData.name || !eventFormData.startDate || !eventFormData.endDate) { setEventFormError("Alle Felder erforderlich"); return; }
-    try {
-      if (editingEvent) await api(`/api/events/${editingEvent.id}`, "PUT", eventFormData);
-      else await api("/api/events", "POST", eventFormData);
-      setShowEventForm(false); setEditingEvent(null); fetchEvents();
-    } catch (err: any) { setEventFormError(err.message || "Fehler beim Speichern"); }
-  }
+  e.preventDefault(); setEventFormError("");
+  if (!eventFormData.name || !eventFormData.startDate || !eventFormData.endDate) { setEventFormError("Alle Felder erforderlich"); return; }
+  try {
+    const data = {
+      name: eventFormData.name,
+      startDate: eventFormData.startDate,
+      endDate: eventFormData.endDate,
+      employeeDiscountPercent: eventFormData.employeeDiscountPercent || "0",
+    };
+    if (editingEvent) await api(`/api/events/${editingEvent.id}`, "PUT", data);
+    else await api("/api/events", "POST", data);
+    setShowEventForm(false); setEditingEvent(null); fetchEvents();
+  } catch (err: any) { setEventFormError(err.message || "Fehler beim Speichern"); }
+}
 
   async function handleDeleteEvent(id: number) {
     if (!confirm("Event wirklich löschen? Alle Zuordnungen gehen verloren!")) return;
@@ -600,7 +606,7 @@ export default function AdminPage() {
         {/* TEST: Zeigt ob der orders-Tab funktioniert */}
 {activeTab === "orders" && (
   <div className="p-4 bg-blue-900/50 border-4 border-blue-500 rounded-xl">
-        <p>Wenn du diese blaue Box siehst, funktioniert der Tab-Block.</p>
+        <p>Selektiere - exporitere deinen Erfolg</p>
     <OrdersAnalytics />
   </div>
 )}
@@ -774,6 +780,21 @@ export default function AdminPage() {
                 <div><label className="block text-sm text-gray-400 mb-1">Startdatum *</label><input type="date" value={eventFormData.startDate} onChange={(e)=>setEventFormData({...eventFormData, startDate: e.target.value})} className="w-full px-4 py-2.5 rounded-xl bg-gray-700 text-white border border-gray-600 focus:border-blue-500 focus:outline-none" /></div>
                 <div><label className="block text-sm text-gray-400 mb-1">Enddatum *</label><input type="date" value={eventFormData.endDate} onChange={(e)=>setEventFormData({...eventFormData, endDate: e.target.value})} className="w-full px-4 py-2.5 rounded-xl bg-gray-700 text-white border border-gray-600 focus:border-blue-500 focus:outline-none" /></div>
               </div>
+              <div>
+          <label className="block text-sm text-gray-400 mb-1">Mitarbeiter-Rabatt (%)</label>
+          <input 
+            type="number" 
+            min="0" 
+            max="100" 
+            step="0.1"
+            value={eventFormData.employeeDiscountPercent || ""} 
+            onChange={(e) => setEventFormData({ ...eventFormData, employeeDiscountPercent: e.target.value })} 
+            className="w-full px-3 py-2 rounded-lg bg-gray-700 text-white border border-gray-600 focus:border-blue-500 focus:outline-none" 
+            placeholder="0"
+          />
+          <p className="text-xs text-gray-500 mt-1">Rabatt in Prozent für Mitarbeiter (z.B. 20 für 20% Rabatt auf Getränke)</p>
+        </div>
+      </div>
             </div>
             <div className="flex gap-3 mt-6"><button type="button" onClick={()=>setShowEventForm(false)} className="flex-1 py-3 rounded-xl font-bold bg-gray-600 hover:bg-gray-500">Abbrechen</button><button type="submit" className="flex-1 py-3 rounded-xl font-bold bg-amber-600 hover:bg-amber-500">Speichern</button></div>
           </form>
