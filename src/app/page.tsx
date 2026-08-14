@@ -50,11 +50,14 @@ export default function POSPage() {
   const receiptRef = useRef<HTMLDivElement>(null);
   const wakeLockRef = useRef<any>(null);
 
-  // ✅ NEU: State für aufklappbare Gruppen
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
 
   const items = Array.from(orderItems.values());
   const foodItems = Array.from(orderFoodItems.values());
+// ✅ NEU: Mitarbeiter-Modus und Ohne-Pfand-Option
+const [isEmployee, setIsEmployee] = useState(false);
+const [noDeposit, setNoDeposit] = useState(false);
+  
 
   useEffect(() => { checkAuth(); }, []);
   async function checkAuth() { try { const r = await fetch("/api/auth/me"); setSession(r.ok ? await r.json() : null); } catch { setSession(null); } }
@@ -115,19 +118,33 @@ export default function POSPage() {
   useEffect(() => { if (session?.authenticated && selectedSalesPointId) { fetchDrinks(); fetchFoods(); } }, [session?.authenticated, selectedSalesPointId, selectedEventId]);
 
   const addDrink = useCallback((drink: Drink) => {
-    setPourSent(false);
-    const priceToUse = drink.hasReduction && drink.reducedPrice !== undefined ? drink.reducedPrice : drink.priceGross;
-    setOrderItems((prev) => {
-      const next = new Map(prev);
-      const existing = next.get(drink.id);
-      if (existing) {
-        next.set(drink.id, { ...existing, quantity: existing.quantity + 1 });
-      } else {
-        next.set(drink.id, { drinkId: drink.id, drinkName: drink.name, quantity: 1, unitPriceGross: priceToUse, unitDeposit: drink.hasDeposit ? drink.depositAmount : 0 });
-      }
-      return next;
-    });
-  }, []);
+  setPourSent(false);
+  
+  // Basis-Preis (mit eventueller Preisreduktion)
+  let priceToUse = drink.hasReduction && drink.reducedPrice !== undefined ? drink.reducedPrice : drink.priceGross;
+  
+  // ✅ NEU: Mitarbeiter-Rabatt anwenden (nur auf Getränk, NICHT auf Pfand)
+  if (isEmployee && selectedEventId) {
+    const currentEvent = events.find((e) => e.id === selectedEventId);
+    if (currentEvent && currentEvent.employeeDiscountPercent > 0) {
+      priceToUse = +(priceToUse * (1 - currentEvent.employeeDiscountPercent / 100)).toFixed(2);
+    }
+  }
+  
+  // ✅ NEU: Pfand-Berechnung (0 wenn "Ohne Pfand" aktiv)
+  const depositToUse = noDeposit ? 0 : (drink.hasDeposit ? drink.depositAmount : 0);
+  
+  setOrderItems((prev) => {
+    const next = new Map(prev);
+    const existing = next.get(drink.id);
+    if (existing) {
+      next.set(drink.id, { ...existing, quantity: existing.quantity + 1 });
+    } else {
+      next.set(drink.id, { drinkId: drink.id, drinkName: drink.name, quantity: 1, unitPriceGross: priceToUse, unitDeposit: depositToUse });
+    }
+    return next;
+  });
+}, [isEmployee, selectedEventId, events, noDeposit]);
 
   const addFood = useCallback((food: Food) => {
     const priceToUse = food.hasReduction && food.reducedPrice !== undefined ? food.reducedPrice : food.priceGross;
