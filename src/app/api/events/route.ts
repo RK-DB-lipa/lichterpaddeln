@@ -90,7 +90,8 @@ export async function PUT(req: NextRequest) {
     if (startDate !== undefined) updateData.startDate = new Date(startDate);
     if (endDate !== undefined) updateData.endDate = new Date(endDate);
     if (isActive !== undefined) updateData.isActive = isActive;
-    if (employeeDiscountPercent !== undefined) updateData.employeeDiscountPercent = parseFloat(employeeDiscountPercent);
+    if (employeeDiscountPercent !== undefined) {updateData.employeeDiscountPercent = parseFloat(employeeDiscountPercent || "0");
+    }
 
     const [updatedEvent] = await db
       .update(events)
