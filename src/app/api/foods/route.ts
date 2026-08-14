@@ -13,17 +13,21 @@ export async function GET(req: NextRequest) {
     const tenantId = session.tenantId;
     const url = new URL(req.url);
     const isCookItemParam = url.searchParams.get("isCookItem");
-    const eventId = url.searchParams.get("eventId");
 
-    let query = db.select().from(foods).where(eq(foods.tenantId, tenantId));
-
+    // ✅ FIX: Alle Bedingungen in ein Array packen und mit and() kombinieren
+    const conditions = [eq(foods.tenantId, tenantId), eq(foods.isActive, true)];
+    
     if (isCookItemParam === "true") {
-      query = query.where(eq(foods.isCookItem, true));
+      conditions.push(eq(foods.isCookItem, true));
     }
 
-    const activeFoods = await query.orderBy(foods.sortOrder);
+    const activeFoods = await db
+      .select()
+      .from(foods)
+      .where(and(...conditions))
+      .orderBy(foods.sortOrder);
 
-    // ✅ FIX: Sichere Verarbeitung ohne Destructuring von null
+    // Sichere Verarbeitung ohne Destructuring von null
     const result = await Promise.all(
       activeFoods.map(async (f) => {
         const reduction = await getReducedPrice(tenantId, f.id, "food", f.priceGross);
@@ -38,13 +42,7 @@ export async function GET(req: NextRequest) {
       })
     );
 
-    // Optional: Filterung nach Event (falls in Zukunft implementiert)
-    let finalResult = result;
-    if (eventId) {
-      // Hier könnte später Event-spezifische Logik hin
-    }
-
-    return NextResponse.json(finalResult);
+    return NextResponse.json(result);
   } catch (error) {
     console.error("GET /api/foods error:", error);
     return NextResponse.json({ error: "Interner Serverfehler" }, { status: 500 });
