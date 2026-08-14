@@ -307,6 +307,8 @@ export default function AdminPage() {
       } else {
         await api("/api/events", "POST", data);
       }
+      console.log("✅ API ANTWORT:", response);
+      
       setShowEventForm(false);
       setEditingEvent(null);
       fetchEvents();
