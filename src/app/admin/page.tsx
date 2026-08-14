@@ -6,7 +6,7 @@ import OrdersAnalytics from "./orders-analytics";
 type Drink = { id: number; name: string; priceGross: number; taxRate: number; hasDeposit: boolean; depositAmount: number; cupSize: string; color: string; imageUrl: string | null; isActive: boolean; sortOrder: number; isPourDrink: boolean; salesPointIds?: number[]; group?: string | null; };
 type Food = { id: number; name: string; priceGross: number; taxRate: number; color: string; imageUrl: string | null; isActive: boolean; isCookItem: boolean; sortOrder: number; group?: string | null; };
 type PriceReduction = { id: number; itemId: number; itemType: "drink" | "food"; startTime: string; endTime: string; reductionPercent: number; isActive: boolean };
-type Event = { id: number; name: string; startDate: string; endDate: string; isActive: boolean; drinkCount: number; foodCount: number };
+type Event = { id: number; name: string; startDate: string; endDate: string; isActive: boolean; drinkCount: number; foodCount: number; employeeDiscountPercent?: number };
 type SalesPoint = { id: number; name: string; isActive: boolean; sortOrder: number };
 type OrderItemSummary = { drinkName: string; totalQuantity: number; totalGross: number; totalDeposit: number };
 type FoodItemSummary = { foodName: string; totalQuantity: number; totalGross: number };
