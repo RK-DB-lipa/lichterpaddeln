@@ -1,10 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
-import { events, eventDrinks, eventFoods } from "@/db/schema";
+import { events } from "@/db/schema";
 import { getSession } from "@/lib/auth";
-import { eq, and, gte, lte, or, sql } from "drizzle-orm";
+import { eq, and, gte, lte } from "drizzle-orm";
 
-// GET: Events für den aktuellen Tenant
 export async function GET(req: NextRequest) {
   try {
     const session = await getSession();
@@ -13,53 +12,33 @@ export async function GET(req: NextRequest) {
 
     const url = new URL(req.url);
     const activeOnly = url.searchParams.get("active") === "true";
-    const currentDate = url.searchParams.get("date");
+    const date = url.searchParams.get("date");
 
-    // Build conditions array
-    const conditions = [eq(events.tenantId, tenantId)];
-    
+    let query = db.select().from(events).where(eq(events.tenantId, tenantId));
+
     if (activeOnly) {
-      conditions.push(eq(events.isActive, true));
+      query = query.where(eq(events.isActive, true));
     }
 
-    if (currentDate) {
-      const date = new Date(currentDate);
-      conditions.push(lte(events.startDate, date));
-      conditions.push(gte(events.endDate, date));
-      conditions.push(eq(events.isActive, true));
+    if (date) {
+      const eventDate = new Date(date);
+      query = query.where(
+        and(
+          lte(events.startDate, eventDate),
+          gte(events.endDate, eventDate)
+        )
+      );
     }
 
-    const allEvents = await db
-      .select()
-      .from(events)
-      .where(and(...conditions))
-      .orderBy(events.startDate);
+    const allEvents = await query.orderBy(events.startDate);
 
-    // Für jedes Event: Anzahl Drinks und Foods ermitteln
-    const eventsWithCounts = await Promise.all(
-      allEvents.map(async (event) => {
-        const drinkCount = await db.execute(
-          sql`SELECT count(*) as count FROM event_drinks WHERE event_id = ${event.id}`
-        );
-        const foodCount = await db.execute(
-          sql`SELECT count(*) as count FROM event_foods WHERE event_id = ${event.id}`
-        );
-        return {
-          ...event,
-          drinkCount: (drinkCount as any)?.[0]?.count || 0,
-          foodCount: (foodCount as any)?.[0]?.count || 0,
-        };
-      })
-    );
-
-    return NextResponse.json(eventsWithCounts);
+    return NextResponse.json(allEvents);
   } catch (error) {
     console.error("GET /api/events error:", error);
     return NextResponse.json({ error: "Interner Serverfehler" }, { status: 500 });
   }
 }
 
-// POST: Neues Event anlegen
 export async function POST(req: NextRequest) {
   try {
     const session = await getSession();
@@ -67,10 +46,10 @@ export async function POST(req: NextRequest) {
     const tenantId = session.tenantId;
 
     const body = await req.json();
-    const { name, startDate, endDate } = body;
+    const { name, startDate, endDate, employeeDiscountPercent } = body;
 
     if (!name || !startDate || !endDate) {
-      return NextResponse.json({ error: "Name, startDate und endDate erforderlich" }, { status: 400 });
+      return NextResponse.json({ error: "Name, Start- und Enddatum erforderlich" }, { status: 400 });
     }
 
     const [event] = await db
@@ -80,13 +59,67 @@ export async function POST(req: NextRequest) {
         name,
         startDate: new Date(startDate),
         endDate: new Date(endDate),
-        isActive: true,
+        employeeDiscountPercent: parseFloat(employeeDiscountPercent) || 0,
       })
       .returning();
 
     return NextResponse.json(event, { status: 201 });
   } catch (error) {
     console.error("POST /api/events error:", error);
+    return NextResponse.json({ error: "Interner Serverfehler" }, { status: 500 });
+  }
+}
+
+export async function PUT(req: NextRequest) {
+  try {
+    const session = await getSession();
+    if (!session) return NextResponse.json({ error: "Nicht autorisiert" }, { status: 401 });
+
+    const url = new URL(req.url);
+    const eventId = url.pathname.split("/").pop();
+    if (!eventId) {
+      return NextResponse.json({ error: "Event-ID erforderlich" }, { status: 400 });
+    }
+
+    const body = await req.json();
+    const { name, startDate, endDate, isActive, employeeDiscountPercent } = body;
+
+    const updateData: any = {};
+    if (name !== undefined) updateData.name = name;
+    if (startDate !== undefined) updateData.startDate = new Date(startDate);
+    if (endDate !== undefined) updateData.endDate = new Date(endDate);
+    if (isActive !== undefined) updateData.isActive = isActive;
+    if (employeeDiscountPercent !== undefined) updateData.employeeDiscountPercent = parseFloat(employeeDiscountPercent);
+
+    const [updatedEvent] = await db
+      .update(events)
+      .set(updateData)
+      .where(eq(events.id, parseInt(eventId)))
+      .returning();
+
+    return NextResponse.json(updatedEvent);
+  } catch (error) {
+    console.error("PUT /api/events error:", error);
+    return NextResponse.json({ error: "Interner Serverfehler" }, { status: 500 });
+  }
+}
+
+export async function DELETE(req: NextRequest) {
+  try {
+    const session = await getSession();
+    if (!session) return NextResponse.json({ error: "Nicht autorisiert" }, { status: 401 });
+
+    const url = new URL(req.url);
+    const eventId = url.pathname.split("/").pop();
+    if (!eventId) {
+      return NextResponse.json({ error: "Event-ID erforderlich" }, { status: 400 });
+    }
+
+    await db.delete(events).where(eq(events.id, parseInt(eventId)));
+
+    return NextResponse.json({ success: true });
+  } catch (error) {
+    console.error("DELETE /api/events error:", error);
     return NextResponse.json({ error: "Interner Serverfehler" }, { status: 500 });
   }
 }
