@@ -14,23 +14,24 @@ export async function GET(req: NextRequest) {
     const activeOnly = url.searchParams.get("active") === "true";
     const date = url.searchParams.get("date");
 
-    let query = db.select().from(events).where(eq(events.tenantId, tenantId));
-
+    // ✅ FIX: Alle Bedingungen in ein Array, dann einmalig and()
+    const conditions = [eq(events.tenantId, tenantId)];
+    
     if (activeOnly) {
-      query = query.where(eq(events.isActive, true));
+      conditions.push(eq(events.isActive, true));
     }
-
+    
     if (date) {
       const eventDate = new Date(date);
-      query = query.where(
-        and(
-          lte(events.startDate, eventDate),
-          gte(events.endDate, eventDate)
-        )
-      );
+      conditions.push(lte(events.startDate, eventDate));
+      conditions.push(gte(events.endDate, eventDate));
     }
 
-    const allEvents = await query.orderBy(events.startDate);
+    const allEvents = await db
+      .select()
+      .from(events)
+      .where(and(...conditions))
+      .orderBy(events.startDate);
 
     return NextResponse.json(allEvents);
   } catch (error) {
