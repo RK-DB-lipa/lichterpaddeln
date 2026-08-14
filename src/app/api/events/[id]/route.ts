@@ -22,6 +22,12 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
     }
 
     const body = await req.json();
+    
+    // ✅ NEU: Rabatt sicher parsen (als Fallback den bestehenden Wert nehmen)
+    const newDiscount = body.employeeDiscountPercent !== undefined 
+      ? parseFloat(String(body.employeeDiscountPercent)) 
+      : existing[0].employeeDiscountPercent;
+
     const [updated] = await db
       .update(events)
       .set({
@@ -29,6 +35,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
         startDate: body.startDate ? new Date(body.startDate) : existing[0].startDate,
         endDate: body.endDate ? new Date(body.endDate) : existing[0].endDate,
         isActive: body.isActive !== undefined ? body.isActive : existing[0].isActive,
+        employeeDiscountPercent: newDiscount, // ✅ HIER WIRD ES JETZT GESPEICHERT!
       })
       .where(eq(events.id, parseInt(id)))
       .returning();
