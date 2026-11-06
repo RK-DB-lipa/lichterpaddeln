@@ -12,16 +12,22 @@ type HandoutState = { orderId: number; salesPointName: string; items: Array<Orde
 
 const DEPOSIT_PER_RETURN = 2.0;
 
-// ✅ Fullscreen Modal - nimmt den gesamten Bildschirm ein
+// ✅ MOBILE-OPTIMIERTES Fullscreen Modal - nimmt den GESAMTEN verfügbaren Platz ein
 function FullscreenModal({ children, zIndex = 9999 }: { children: React.ReactNode; zIndex?: number }) {
   return (
     <div 
-      className="fixed inset-0 bg-black/95 flex items-start justify-center p-4 overflow-y-auto"
-      style={{ zIndex }}
+      className="fixed top-0 left-0 right-0 bottom-0 bg-black/95 flex flex-col overflow-hidden"
+      style={{ 
+        zIndex,
+        height: '100dvh', // Dynamic viewport height für Mobile
+        maxHeight: '100dvh'
+      }}
     >
-      <div className="bg-gray-800 rounded-2xl w-full max-w-2xl shadow-2xl border border-gray-600 my-4">
-        <div className="p-5">
-          {children}
+      <div className="flex-1 overflow-y-auto p-4 pb-8">
+        <div className="bg-gray-800 rounded-2xl w-full max-w-2xl mx-auto shadow-2xl border border-gray-600">
+          <div className="p-5">
+            {children}
+          </div>
         </div>
       </div>
     </div>
@@ -572,7 +578,7 @@ export default function POSPage() {
         )}
       </div>
 
-      {/* ✅ FULLSCREEN MODALS */}
+      {/* ✅ MOBILE-OPTIMIERTE FULLSCREEN MODALS */}
       {showResetConfirm && (
         <FullscreenModal>
           <h2 className="text-lg font-bold mb-2 text-center">⚠️ Bestellung abschließen?</h2>
