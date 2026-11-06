@@ -12,7 +12,7 @@ type HandoutState = { orderId: number; salesPointName: string; items: Array<Orde
 
 const DEPOSIT_PER_RETURN = 2.0;
 
-// ✅ KORRIGIERTE DraggableModal-Komponente - TypeScript-Fix
+// ✅ KORRIGIERTE DraggableModal-Komponente mit Fullscreen-Overlay
 function DraggableModal({ children, initialWidth = "max-w-md", zIndex = 9999 }: { children: React.ReactNode; initialWidth?: string; zIndex?: number }) {
   const [initialized, setInitialized] = useState(false);
   const [pos, setPos] = useState({ x: 0, y: 0 });
@@ -58,12 +58,12 @@ function DraggableModal({ children, initialWidth = "max-w-md", zIndex = 9999 }: 
     let newX = cx - dragOffset.current.x;
     let newY = cy - dragOffset.current.y;
     
-    // X-Begrenzung: Modal darf maximal zur Hälfte aus dem Bildschirm raus
+    // X-Begrenzung
     const minX = -(modalRect.width / 2);
     const maxX = viewportWidth - (modalRect.width / 2);
     newX = Math.max(minX, Math.min(newX, maxX));
     
-    // Y-Begrenzung: Mindestens 10px Abstand nach oben, nicht über unteren Rand
+    // Y-Begrenzung
     const minY = 10;
     const maxY = viewportHeight - 50;
     newY = Math.max(minY, Math.min(newY, maxY));
@@ -89,28 +89,37 @@ function DraggableModal({ children, initialWidth = "max-w-md", zIndex = 9999 }: 
   }, [isDragging, handleDragMove, handleDragEnd]);
 
   return (
-    <div 
-      ref={modalRef}
-      className={`fixed ${initialWidth} w-full bg-gray-800 rounded-2xl shadow-2xl border border-gray-600 ${isDragging ? "cursor-grabbing" : ""}`}
-      style={{ 
-        left: initialized ? pos.x : "50%", 
-        top: initialized ? pos.y : "10%", 
-        transform: initialized ? "none" : "translateX(-50%)",
-        zIndex
-      }}
-    >
+    <>
+      {/* Fullscreen-Overlay */}
       <div 
-        onMouseDown={handleDragStart}
-        onTouchStart={handleDragStart}
-        className="cursor-grab active:cursor-grabbing bg-gray-700/50 px-3 py-1.5 rounded-t-2xl border-b border-gray-600 flex items-center justify-center text-xs text-gray-400 select-none"
-        title="Zum Verschieben ziehen"
+        className="fixed inset-0 bg-black/80"
+        style={{ zIndex: zIndex - 1 }}
+      />
+      
+      {/* Modal selbst */}
+      <div 
+        ref={modalRef}
+        className={`fixed ${initialWidth} w-full bg-gray-800 rounded-2xl shadow-2xl border border-gray-600 ${isDragging ? "cursor-grabbing" : ""}`}
+        style={{ 
+          left: initialized ? pos.x : "50%", 
+          top: initialized ? pos.y : "10%", 
+          transform: initialized ? "none" : "translateX(-50%)",
+          zIndex
+        }}
       >
-        ⋮⋮ Verschiebbar
+        <div 
+          onMouseDown={handleDragStart}
+          onTouchStart={handleDragStart}
+          className="cursor-grab active:cursor-grabbing bg-gray-700/50 px-3 py-1.5 rounded-t-2xl border-b border-gray-600 flex items-center justify-center text-xs text-gray-400 select-none"
+          title="Zum Verschieben ziehen"
+        >
+          ⋮⋮ Verschiebbar
+        </div>
+        <div className="p-5">
+          {children}
+        </div>
       </div>
-      <div className="p-5">
-        {children}
-      </div>
-    </div>
+    </>
   );
 }
 
