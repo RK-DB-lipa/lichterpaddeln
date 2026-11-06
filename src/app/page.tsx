@@ -12,114 +12,19 @@ type HandoutState = { orderId: number; salesPointName: string; items: Array<Orde
 
 const DEPOSIT_PER_RETURN = 2.0;
 
-// ✅ KORRIGIERTE DraggableModal-Komponente mit Fullscreen-Overlay
-function DraggableModal({ children, initialWidth = "max-w-md", zIndex = 9999 }: { children: React.ReactNode; initialWidth?: string; zIndex?: number }) {
-  const [initialized, setInitialized] = useState(false);
-  const [pos, setPos] = useState({ x: 0, y: 0 });
-  const [isDragging, setIsDragging] = useState(false);
-  const dragOffset = useRef({ x: 0, y: 0 });
-  const modalRef = useRef<HTMLDivElement>(null);
-
-  // Initial positionieren: 10% Abstand nach oben, horizontal zentriert
-  useEffect(() => {
-    if (!initialized && modalRef.current) {
-      const rect = modalRef.current.getBoundingClientRect();
-      const viewportHeight = window.innerHeight;
-      const viewportWidth = window.innerWidth;
-      
-      setPos({
-        x: (viewportWidth - rect.width) / 2,
-        y: viewportHeight * 0.1
-      });
-      setInitialized(true);
-    }
-  }, [initialized]);
-
-  const handleDragStart = (e: React.MouseEvent | React.TouchEvent) => {
-    if (!modalRef.current) return;
-    setIsDragging(true);
-    const cx = "touches" in e ? e.touches[0].clientX : e.clientX;
-    const cy = "touches" in e ? e.touches[0].clientY : e.clientY;
-    const rect = modalRef.current.getBoundingClientRect();
-    dragOffset.current = { x: cx - rect.left, y: cy - rect.top };
-    e.preventDefault();
-  };
-
-  const handleDragMove = useCallback((e: MouseEvent | TouchEvent) => {
-    if (!isDragging || !modalRef.current) return;
-    
-    const cx = "touches" in e ? e.touches[0].clientX : e.clientX;
-    const cy = "touches" in e ? e.touches[0].clientY : e.clientY;
-    
-    const modalRect = modalRef.current.getBoundingClientRect();
-    const viewportWidth = window.innerWidth;
-    const viewportHeight = window.innerHeight;
-    
-    let newX = cx - dragOffset.current.x;
-    let newY = cy - dragOffset.current.y;
-    
-    // X-Begrenzung
-    const minX = -(modalRect.width / 2);
-    const maxX = viewportWidth - (modalRect.width / 2);
-    newX = Math.max(minX, Math.min(newX, maxX));
-    
-    // Y-Begrenzung
-    const minY = 10;
-    const maxY = viewportHeight - 50;
-    newY = Math.max(minY, Math.min(newY, maxY));
-    
-    setPos({ x: newX, y: newY });
-  }, [isDragging]);
-
-  const handleDragEnd = useCallback(() => setIsDragging(false), []);
-
-  useEffect(() => {
-    if (isDragging) {
-      window.addEventListener("mousemove", handleDragMove);
-      window.addEventListener("mouseup", handleDragEnd);
-      window.addEventListener("touchmove", handleDragMove);
-      window.addEventListener("touchend", handleDragEnd);
-      return () => {
-        window.removeEventListener("mousemove", handleDragMove);
-        window.removeEventListener("mouseup", handleDragEnd);
-        window.removeEventListener("touchmove", handleDragMove);
-        window.removeEventListener("touchend", handleDragEnd);
-      };
-    }
-  }, [isDragging, handleDragMove, handleDragEnd]);
-
+// ✅ Fullscreen Modal - nimmt den gesamten Bildschirm ein
+function FullscreenModal({ children, zIndex = 9999 }: { children: React.ReactNode; zIndex?: number }) {
   return (
-    <>
-      {/* Fullscreen-Overlay */}
-      <div 
-        className="fixed inset-0 bg-black/80"
-        style={{ zIndex: zIndex - 1 }}
-      />
-      
-      {/* Modal selbst */}
-      <div 
-        ref={modalRef}
-        className={`fixed ${initialWidth} w-full bg-gray-800 rounded-2xl shadow-2xl border border-gray-600 ${isDragging ? "cursor-grabbing" : ""}`}
-        style={{ 
-          left: initialized ? pos.x : "50%", 
-          top: initialized ? pos.y : "10%", 
-          transform: initialized ? "none" : "translateX(-50%)",
-          zIndex
-        }}
-      >
-        <div 
-          onMouseDown={handleDragStart}
-          onTouchStart={handleDragStart}
-          className="cursor-grab active:cursor-grabbing bg-gray-700/50 px-3 py-1.5 rounded-t-2xl border-b border-gray-600 flex items-center justify-center text-xs text-gray-400 select-none"
-          title="Zum Verschieben ziehen"
-        >
-          ⋮⋮ Verschiebbar
-        </div>
+    <div 
+      className="fixed inset-0 bg-black/95 flex items-start justify-center p-4 overflow-y-auto"
+      style={{ zIndex }}
+    >
+      <div className="bg-gray-800 rounded-2xl w-full max-w-2xl shadow-2xl border border-gray-600 my-4">
         <div className="p-5">
           {children}
         </div>
       </div>
-    </>
+    </div>
   );
 }
 
@@ -667,8 +572,9 @@ export default function POSPage() {
         )}
       </div>
 
+      {/* ✅ FULLSCREEN MODALS */}
       {showResetConfirm && (
-        <DraggableModal initialWidth="max-w-sm">
+        <FullscreenModal>
           <h2 className="text-lg font-bold mb-2 text-center">⚠️ Bestellung abschließen?</h2>
           <div className="mb-3 bg-gray-700/50 rounded-lg p-2">
             <label className="block text-xs text-gray-400 mb-1">Verkaufsstelle</label>
@@ -700,11 +606,11 @@ export default function POSPage() {
               Ja, abschließen
             </button>
           </div>
-        </DraggableModal>
+        </FullscreenModal>
       )}
 
       {showCancelConfirm && (
-        <DraggableModal initialWidth="max-w-sm">
+        <FullscreenModal>
           <h2 className="text-lg font-bold mb-3 text-center text-red-400">⚠️ Abbrechen?</h2>
           <div className="text-center mb-4">
             <p className="text-sm text-gray-300">Bestellung wirklich verwerfen?</p>
@@ -715,11 +621,11 @@ export default function POSPage() {
             <button onClick={() => setShowCancelConfirm(false)} className="flex-1 py-2.5 rounded-xl font-bold bg-gray-600">Weiter</button>
             <button onClick={cancelOrder} className="flex-1 py-2.5 rounded-xl font-bold bg-red-600">Verwerfen</button>
           </div>
-        </DraggableModal>
+        </FullscreenModal>
       )}
 
       {editingItem !== null && (
-        <DraggableModal initialWidth="max-w-xs">
+        <FullscreenModal>
           <h3 className="text-lg font-bold mb-3 text-center">Anzahl ändern</h3>
           <p className="text-sm text-gray-300 text-center mb-3">{editingItem.type === "drink" ? orderItems.get(editingItem.id)?.drinkName : orderFoodItems.get(editingItem.id)?.foodName}</p>
           <input type="number" min="0" value={editQuantity} onChange={(e) => setEditQuantity(e.target.value)} className="w-full px-3 py-2 rounded-xl bg-gray-700 text-white text-lg font-bold text-center border border-gray-600 focus:border-blue-500 focus:outline-none tabular-nums mb-4" autoFocus />
@@ -727,29 +633,29 @@ export default function POSPage() {
             <button onClick={() => setEditingItem(null)} className="flex-1 py-2.5 rounded-xl font-bold bg-gray-600">Abbrechen</button>
             <button onClick={() => { const qty = parseInt(editQuantity); if (!isNaN(qty)) updateItemQuantity(editingItem.type, editingItem.id, qty); setEditingItem(null); }} className="flex-1 py-2.5 rounded-xl font-bold bg-amber-600">Speichern</button>
           </div>
-        </DraggableModal>
+        </FullscreenModal>
       )}
 
       {showCalculator && <CalculatorModal total={grandTotal} onClose={() => setShowCalculator(false)} />}
 
       {showSuccess && lastOrder && !handout && (
-        <DraggableModal initialWidth="max-w-sm">
+        <FullscreenModal>
           <div className="text-center py-4">
             <div className="text-5xl mb-3">✅</div>
             <div className="text-xl font-bold">Bestellung #{lastOrder.orderId}</div>
             <div className="text-3xl font-extrabold text-green-400 tabular-nums mt-2">{lastOrder.totalGross.toFixed(2)} €</div>
           </div>
-        </DraggableModal>
+        </FullscreenModal>
       )}
 
       {handout && (
-        <DraggableModal initialWidth="max-w-md" zIndex={9999}>
-          <div className="-m-5">
-            <div className="p-4 border-b border-gray-700 shrink-0 rounded-t-2xl bg-gray-700/30">
+        <FullscreenModal>
+          <div>
+            <div className="p-4 border-b border-gray-700 mb-4">
               <h2 className="text-xl font-extrabold text-center">🥤 Ausgabe – Bestellung #{handout.orderId}</h2>
               <p className="text-xs text-gray-400 text-center mt-1">{handout.salesPointName} · {handout.totalGross.toFixed(2)} €{handout.depositReturnedCount > 0 && <span className="text-amber-400"> · {handout.depositReturnedCount} Becher zurück</span>}</p>
             </div>
-            <div className="p-3 space-y-2 max-h-[50vh] overflow-y-auto">
+            <div className="space-y-2 max-h-[60vh] overflow-y-auto mb-4">
               {handout.items.map((item) => { 
                 const done = !!handout.checked[item.drinkId]; 
                 const dc = drinks.find((d) => d.id === item.drinkId)?.color || "#6B7280"; 
@@ -783,7 +689,7 @@ export default function POSPage() {
                 );
               })}
             </div>
-            <div className="p-4 border-t border-gray-700 shrink-0">
+            <div className="border-t border-gray-700 pt-4">
               <div className="w-full h-2 rounded-full bg-gray-700 mb-3 overflow-hidden">
                 <div className="h-full bg-green-500 transition-all" style={{width: `${handoutAllItems > 0 ? (handoutCheckedCount / handoutAllItems) * 100 : 0}%`}} />
               </div>
@@ -796,7 +702,7 @@ export default function POSPage() {
               </button>
             </div>
           </div>
-        </DraggableModal>
+        </FullscreenModal>
       )}
     </div>
   );
@@ -807,7 +713,7 @@ function CalculatorModal({ total, onClose }: { total: number; onClose: () => voi
   const gn = parseFloat(given.replace(",", ".")) || 0; 
   const ch = gn - total;
   return (
-    <DraggableModal initialWidth="max-w-xs">
+    <FullscreenModal>
       <h3 className="text-lg font-bold mb-3 text-center">🧮 Wechselgeld</h3>
       <div className="text-center mb-3">
         <div className="text-xs text-gray-400">Zu zahlen</div>
@@ -822,6 +728,6 @@ function CalculatorModal({ total, onClose }: { total: number; onClose: () => voi
       </div>
       {gn > 0 && <div className="text-center mb-3 p-2 rounded-lg bg-gray-700/50"><div className="text-xs text-gray-400">Wechselgeld</div><div className={`text-2xl font-extrabold tabular-nums ${ch >= 0 ? "text-green-400" : "text-red-400"}`}>{ch >= 0 ? "" : "-"}{Math.abs(ch).toFixed(2)} €</div></div>}
       <button onClick={onClose} className="w-full py-2.5 rounded-xl font-bold bg-amber-600 hover:bg-amber-500">Schließen</button>
-    </DraggableModal>
+    </FullscreenModal>
   );
 }
