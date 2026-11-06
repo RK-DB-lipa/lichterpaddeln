@@ -12,6 +12,89 @@ type HandoutState = { orderId: number; salesPointName: string; items: Array<Orde
 
 const DEPOSIT_PER_RETURN = 2.0;
 
+// ✅ NEU: Wiederverwendbare DraggableModal-Komponente
+function DraggableModal({ children, initialWidth = "max-w-md", zIndex = 9999 }: { children: React.ReactNode; initialWidth?: string; zIndex?: number }) {
+  const [pos, setPos] = useState({ x: -1, y: 20 }); // -1 = noch nicht initialisiert
+  const [isDragging, setIsDragging] = useState(false);
+  const dragOffset = useRef({ x: 0, y: 0 });
+  const modalRef = useRef<HTMLDivElement>(null);
+
+  // Initial zentriert am oberen Bildschirmrand positionieren
+  useEffect(() => {
+    if (pos.x === -1 && modalRef.current) {
+      const rect = modalRef.current.getBoundingClientRect();
+      setPos({
+        x: Math.max(10, (window.innerWidth - rect.width) / 2),
+        y: 20
+      });
+    }
+  }, [pos.x]);
+
+  const handleDragStart = (e: React.MouseEvent | React.TouchEvent) => {
+    if (!modalRef.current) return;
+    setIsDragging(true);
+    const cx = "touches" in e ? e.touches[0].clientX : e.clientX;
+    const cy = "touches" in e ? e.touches[0].clientY : e.clientY;
+    const rect = modalRef.current.getBoundingClientRect();
+    dragOffset.current = { x: cx - rect.left, y: cy - rect.top };
+    e.preventDefault();
+  };
+
+  const handleDragMove = useCallback((e: MouseEvent | TouchEvent) => {
+    if (!isDragging) return;
+    const cx = "touches" in e ? e.touches[0].clientX : e.clientX;
+    const cy = "touches" in e ? e.touches[0].clientY : e.clientY;
+    const newX = cx - dragOffset.current.x;
+    const newY = cy - dragOffset.current.y;
+    setPos({
+      x: Math.max(0, Math.min(newX, window.innerWidth - 100)),
+      y: Math.max(0, Math.min(newY, window.innerHeight - 50))
+    });
+  }, [isDragging]);
+
+  const handleDragEnd = useCallback(() => setIsDragging(false), []);
+
+  useEffect(() => {
+    if (isDragging) {
+      window.addEventListener("mousemove", handleDragMove);
+      window.addEventListener("mouseup", handleDragEnd);
+      window.addEventListener("touchmove", handleDragMove);
+      window.addEventListener("touchend", handleDragEnd);
+      return () => {
+        window.removeEventListener("mousemove", handleDragMove);
+        window.removeEventListener("mouseup", handleDragEnd);
+        window.removeEventListener("touchmove", handleDragMove);
+        window.removeEventListener("touchend", handleDragEnd);
+      };
+    }
+  }, [isDragging, handleDragMove, handleDragEnd]);
+
+  return (
+    <div 
+      ref={modalRef}
+      className={`fixed ${initialWidth} w-full bg-gray-800 rounded-2xl shadow-2xl border border-gray-600 ${isDragging ? "cursor-grabbing" : ""}`}
+      style={{ 
+        left: pos.x === -1 ? "50%" : pos.x, 
+        top: pos.y, 
+        transform: pos.x === -1 ? "translateX(-50%)" : "none",
+        zIndex
+      }}
+    >
+      <div 
+        onMouseDown={handleDragStart}
+        onTouchStart={handleDragStart}
+        className="cursor-grab active:cursor-grabbing bg-gray-700/50 px-3 py-1.5 rounded-t-2xl border-b border-gray-600 flex items-center justify-center text-xs text-gray-400 select-none"
+        title="Zum Verschieben ziehen"
+      >
+        ⋮⋮ Verschiebbar
+      </div>
+      <div className="p-5">
+        {children}
+      </div>
+    </div>
+  );
+}
+
 export default function POSPage() {
   const [session, setSession] = useState<any>(undefined);
   const [loginUsername, setLoginUsername] = useState("");
@@ -43,19 +126,19 @@ export default function POSPage() {
   const [lastOrder, setLastOrder] = useState<{ orderId: number; totalGross: number } | null>(null);
   const [handout, setHandout] = useState<HandoutState | null>(null);
 
-  const [receiptMinimized, setReceiptMinimized] = useState(false);
-  const [receiptPos, setReceiptPos] = useState({ x: 0, y: 0 });
-  const [isDragging, setIsDragging] = useState(false);
-  const dragOffset = useRef({ x: 0, y: 0 });
-  const receiptRef = useRef<HTMLDivElement>(null);
-  const wakeLockRef = useRef<any>(null);
+  // Mitarbeiter-Rabatt & Ohne-Pfand
+  const [isEmployee, setIsEmployee] = useState(false);
+  const [noDeposit, setNoDeposit] = useState(false);
 
   // Aufklappbare Gruppen
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
 
-  // ✅ NEU: Mitarbeiter-Modus und Ohne-Pfand-Option
-  const [isEmployee, setIsEmployee] = useState(false);
-  const [noDeposit, setNoDeposit] = useState(false);
+  const [receiptMinimized, setReceiptMinimized] = useState(false);
+  const [receiptPos, setReceiptPos] = useState({ x: 0, y: 0 });
+  const [isDraggingReceipt, setIsDraggingReceipt] = useState(false);
+  const dragOffset = useRef({ x: 0, y: 0 });
+  const receiptRef = useRef<HTMLDivElement>(null);
+  const wakeLockRef = useRef<any>(null);
 
   const items = Array.from(orderItems.values());
   const foodItems = Array.from(orderFoodItems.values());
@@ -106,9 +189,7 @@ export default function POSPage() {
       if (r.ok) {
         const evts = await r.json();
         setEvents(evts);
-        if (evts.length > 0 && selectedEventId === null) {
-          setSelectedEventId(evts[0].id);
-        }
+        if (evts.length > 0 && selectedEventId === null) setSelectedEventId(evts[0].id);
       }
     } catch (err) { console.error(err); }
   }
@@ -118,7 +199,6 @@ export default function POSPage() {
 
   useEffect(() => { if (session?.authenticated && selectedSalesPointId) { fetchDrinks(); fetchFoods(); } }, [session?.authenticated, selectedSalesPointId, selectedEventId]);
 
-  // ✅ NEU: Hilfsfunktion für Mitarbeiter-Rabatt
   const getEmployeeDiscountPercent = useCallback((): number => {
     if (!isEmployee || !selectedEventId) return 0;
     const currentEvent = events.find((e) => e.id === selectedEventId);
@@ -127,19 +207,12 @@ export default function POSPage() {
 
   const addDrink = useCallback((drink: Drink) => {
     setPourSent(false);
-    
-    // Basis-Preis (mit eventueller Preisreduktion)
     let priceToUse = drink.hasReduction && drink.reducedPrice !== undefined ? drink.reducedPrice : drink.priceGross;
-    
-    // ✅ NEU: Mitarbeiter-Rabatt anwenden (nur auf Getränk, NICHT auf Pfand)
     const discountPercent = getEmployeeDiscountPercent();
     if (discountPercent > 0) {
       priceToUse = +(priceToUse * (1 - discountPercent / 100)).toFixed(2);
     }
-    
-    // ✅ NEU: Pfand-Berechnung (0 wenn "Ohne Pfand" aktiv)
     const depositToUse = noDeposit ? 0 : (drink.hasDeposit ? drink.depositAmount : 0);
-    
     setOrderItems((prev) => {
       const next = new Map(prev);
       const existing = next.get(drink.id);
@@ -201,12 +274,9 @@ export default function POSPage() {
               items: pourItems.map((i) => ({ drinkName: i.drinkName, quantity: i.quantity }))
             })
           });
-        } catch (err) {
-          console.error("Fehler beim Stornieren der Zapf-Queue:", err);
-        }
+        } catch (err) { console.error("Fehler beim Stornieren der Zapf-Queue:", err); }
       }
     }
-
     setOrderItems(new Map());
     setOrderFoodItems(new Map());
     setDepositReturned02(0);
@@ -251,12 +321,10 @@ export default function POSPage() {
 
   const handleReset = useCallback(async () => {
     if (!selectedSalesPointId) return;
-    
     if (hasPourDrinks && !pourSent) {
       alert("⚠️ Bitte erst die Zapf-Getränke an die Zapfanlage senden, bevor du die Bestellung abschließt!");
       return;
     }
-
     if (items.length > 0 || foodItems.length > 0) {
       try {
         const cashierName = session?.displayName || session?.username || "";
@@ -299,9 +367,9 @@ export default function POSPage() {
     setShowResetConfirm(false);
   }, [items, foodItems, depositReturned, depositReturned02, depositReturned04, grandTotal, selectedSalesPointId, selectedSalesPoint, drinks, session, hasPourDrinks, pourSent]);
 
-  const handleDragStart = (e: React.MouseEvent | React.TouchEvent) => { if (!receiptRef.current) return; setIsDragging(true); const cx = "touches" in e ? e.touches[0].clientX : e.clientX; const cy = "touches" in e ? e.touches[0].clientY : e.clientY; const r = receiptRef.current.getBoundingClientRect(); dragOffset.current = { x: cx - r.left, y: cy - r.top }; };
-  const handleDragMove = useCallback((e: MouseEvent | TouchEvent) => {
-    if (!isDragging || !receiptRef.current || !receiptRef.current.parentElement) return;
+  const handleDragStartReceipt = (e: React.MouseEvent | React.TouchEvent) => { if (!receiptRef.current) return; setIsDraggingReceipt(true); const cx = "touches" in e ? e.touches[0].clientX : e.clientX; const cy = "touches" in e ? e.touches[0].clientY : e.clientY; const r = receiptRef.current.getBoundingClientRect(); dragOffset.current = { x: cx - r.left, y: cy - r.top }; };
+  const handleDragMoveReceipt = useCallback((e: MouseEvent | TouchEvent) => {
+    if (!isDraggingReceipt || !receiptRef.current || !receiptRef.current.parentElement) return;
     const cx = "touches" in e ? e.touches[0].clientX : e.clientX;
     const cy = "touches" in e ? e.touches[0].clientY : e.clientY;
     const panel = receiptRef.current;
@@ -312,9 +380,9 @@ export default function POSPage() {
     nx = Math.max(0, Math.min(nx, container.width - rect.width));
     ny = Math.max(0, Math.min(ny, container.height - rect.height));
     setReceiptPos({ x: nx, y: ny });
-  }, [isDragging]);
-  const handleDragEnd = useCallback(() => setIsDragging(false), []);
-  useEffect(() => { if (isDragging) { window.addEventListener("mousemove", handleDragMove); window.addEventListener("mouseup", handleDragEnd); window.addEventListener("touchmove", handleDragMove); window.addEventListener("touchend", handleDragEnd); return () => { window.removeEventListener("mousemove", handleDragMove); window.removeEventListener("mouseup", handleDragEnd); window.removeEventListener("touchmove", handleDragMove); window.removeEventListener("touchend", handleDragEnd); }; } }, [isDragging, handleDragMove, handleDragEnd]);
+  }, [isDraggingReceipt]);
+  const handleDragEndReceipt = useCallback(() => setIsDraggingReceipt(false), []);
+  useEffect(() => { if (isDraggingReceipt) { window.addEventListener("mousemove", handleDragMoveReceipt); window.addEventListener("mouseup", handleDragEndReceipt); window.addEventListener("touchmove", handleDragMoveReceipt); window.addEventListener("touchend", handleDragEndReceipt); return () => { window.removeEventListener("mousemove", handleDragMoveReceipt); window.removeEventListener("mouseup", handleDragEndReceipt); window.removeEventListener("touchmove", handleDragMoveReceipt); window.removeEventListener("touchend", handleDragEndReceipt); }; } }, [isDraggingReceipt, handleDragMoveReceipt, handleDragEndReceipt]);
 
   const handoutCheckedCount = handout ? handout.items.filter((i) => handout.checked[i.drinkId]).length + handout.foodItems.filter((i) => handout.checked[-i.foodId]).length : 0;
   const handoutAllItems = handout ? handout.items.length + handout.foodItems.length : 0;
@@ -323,35 +391,11 @@ export default function POSPage() {
   const toggleGroup = useCallback((groupName: string) => {
     setCollapsedGroups((prev) => {
       const next = new Set(prev);
-      if (next.has(groupName)) {
-        next.delete(groupName);
-      } else {
-        next.add(groupName);
-      }
+      if (next.has(groupName)) next.delete(groupName);
+      else next.add(groupName);
       return next;
     });
   }, []);
-
-  // ✅ NEU: Hilfsfunktion für Preis-Anzeige mit Mitarbeiter-Rabatt
-  const getDisplayPrice = (drink: Drink): { original: number; current: number; hasDiscount: boolean } => {
-    const basePrice = drink.hasReduction && drink.reducedPrice !== undefined ? drink.reducedPrice : drink.priceGross;
-    const discountPercent = getEmployeeDiscountPercent();
-    
-    if (discountPercent > 0) {
-      const discountedPrice = +(basePrice * (1 - discountPercent / 100)).toFixed(2);
-      return {
-        original: drink.priceGross,
-        current: discountedPrice,
-        hasDiscount: true,
-      };
-    }
-    
-    return {
-      original: drink.priceGross,
-      current: basePrice,
-      hasDiscount: !!(drink.hasReduction && drink.reducedPrice !== undefined),
-    };
-  };
 
   if (session === undefined) return <div className="h-screen bg-gray-900 flex items-center justify-center text-white"><p>Laden...</p></div>;
 
@@ -389,29 +433,16 @@ export default function POSPage() {
               {events.map((ev) => (<option key={ev.id} value={ev.id}>{ev.name}</option>))}
             </select>
           )}
-          
-          {/* ✅ NEU: Mitarbeiter-Checkbox */}
-          <label className={`flex items-center gap-1 text-xs rounded-lg px-2 py-1 border cursor-pointer transition-all ${isEmployee ? "bg-purple-600 border-purple-400 text-white" : "bg-purple-700/50 hover:bg-purple-600/50 border-purple-500 text-purple-200"}`}>
-            <input 
-              type="checkbox" 
-              checked={isEmployee} 
-              onChange={(e) => setIsEmployee(e.target.checked)} 
-              className="w-3 h-3"
-            />
-            <span className="font-bold">MITARBEITER</span>
+          {/* Mitarbeiter-Checkbox */}
+          <label className="flex items-center gap-1 text-xs bg-purple-700/50 hover:bg-purple-600/50 rounded-lg px-2 py-1 border border-purple-500 cursor-pointer">
+            <input type="checkbox" checked={isEmployee} onChange={(e) => setIsEmployee(e.target.checked)} className="w-3 h-3" />
+            <span>MITARBEITER</span>
           </label>
-
-          {/* ✅ NEU: Ohne-Pfand-Checkbox */}
-          <label className={`flex items-center gap-1 text-xs rounded-lg px-2 py-1 border cursor-pointer transition-all ${noDeposit ? "bg-amber-600 border-amber-400 text-white" : "bg-amber-700/50 hover:bg-amber-600/50 border-amber-500 text-amber-200"}`}>
-            <input 
-              type="checkbox" 
-              checked={noDeposit} 
-              onChange={(e) => setNoDeposit(e.target.checked)} 
-              className="w-3 h-3"
-            />
-            <span className="font-bold">Ohne Pfand</span>
+          {/* Ohne-Pfand-Checkbox */}
+          <label className="flex items-center gap-1 text-xs bg-amber-700/50 hover:bg-amber-600/50 rounded-lg px-2 py-1 border border-amber-500 cursor-pointer">
+            <input type="checkbox" checked={noDeposit} onChange={(e) => setNoDeposit(e.target.checked)} className="w-3 h-3" />
+            <span>Ohne Pfand</span>
           </label>
-
           <a href="/zapf" className="text-xs bg-gray-700 hover:bg-gray-600 rounded-lg px-2 py-1 border border-gray-600 font-bold transition-colors">🍺 Zapf</a>
           {foods.some(f => f.isCookItem) && <a href="/koch" className="text-xs bg-orange-700 hover:bg-orange-600 rounded-lg px-2 py-1 border border-orange-500 font-bold transition-colors">🍳 Koch</a>}
           <select value={selectedSalesPointId ?? ""} onChange={(e) => setSelectedSalesPointId(parseInt(e.target.value))} className="bg-gray-700 text-white text-xs md:text-sm rounded-lg px-2 py-1 border border-gray-600 focus:border-blue-500 focus:outline-none">
@@ -421,18 +452,6 @@ export default function POSPage() {
           <button onClick={handleLogout} className="text-[10px] text-red-400 hover:text-red-300 ml-0.5" title="Abmelden">🚪</button>
         </div>
       </header>
-
-      {/* ✅ NEU: Info-Banner wenn Mitarbeiter-Modus aktiv */}
-      {isEmployee && getEmployeeDiscountPercent() > 0 && (
-        <div className="bg-purple-700/40 border-b border-purple-500 px-3 py-1 text-xs text-purple-200 text-center font-bold">
-          💼 Mitarbeiter-Modus aktiv · {getEmployeeDiscountPercent()}% Rabatt auf Getränke (nicht auf Pfand)
-        </div>
-      )}
-      {isEmployee && getEmployeeDiscountPercent() === 0 && (
-        <div className="bg-amber-700/40 border-b border-amber-500 px-3 py-1 text-xs text-amber-200 text-center font-bold">
-          ⚠️ Mitarbeiter-Modus aktiv, aber kein Rabatt für das aktuelle Event hinterlegt
-        </div>
-      )}
 
       <div className="flex flex-1 overflow-hidden relative" style={{ minHeight: 0 }}>
         <aside className="w-14 md:w-16 shrink-0 bg-gray-800/90 border-r border-gray-700 flex flex-col items-center py-1.5 gap-1 overflow-y-auto z-30">
@@ -469,18 +488,11 @@ export default function POSPage() {
                   const currentGroup = drink.group || null;
                   const showSeparator = currentGroup && currentGroup !== lastGroup;
                   if (currentGroup) lastGroup = currentGroup;
-                  
                   const isCollapsed = currentGroup ? collapsedGroups.has(currentGroup) : false;
-                  const displayPrice = getDisplayPrice(drink);
-
                   return (
                     <div key={drink.id} className="contents">
                       {showSeparator && currentGroup && (
-                        <div 
-                          className="col-span-full flex items-center gap-2 my-2 cursor-pointer select-none hover:bg-gray-800/50 rounded-lg px-2 py-1 transition-colors"
-                          onClick={() => toggleGroup(currentGroup)}
-                          title="Gruppe auf-/zuklappen"
-                        >
+                        <div className="col-span-full flex items-center gap-2 my-2 cursor-pointer select-none hover:bg-gray-800/50 rounded-lg px-2 py-1 transition-colors" onClick={() => toggleGroup(currentGroup)} title="Gruppe auf-/zuklappen">
                           <span className="h-px flex-1 bg-gray-600" />
                           <span className="text-xs text-gray-300 font-bold uppercase tracking-wider flex items-center gap-1">
                             {isCollapsed ? "▶" : "▼"} {currentGroup}
@@ -488,7 +500,6 @@ export default function POSPage() {
                           <span className="h-px flex-1 bg-gray-600" />
                         </div>
                       )}
-                      
                       {!isCollapsed && (
                         <button 
                           onClick={() => {
@@ -510,21 +521,35 @@ export default function POSPage() {
                           <div className="font-extrabold text-sm md:text-base leading-tight drop-shadow-md">{drink.name}</div>
                           <div className="mt-auto">
                             <div className="text-lg md:text-xl font-extrabold drop-shadow-md">
-                              {displayPrice.hasDiscount ? (
-                                <>
-                                  <span className="text-sm line-through opacity-60 mr-1">{displayPrice.original.toFixed(2)} €</span>
-                                  <span className={isEmployee ? "text-purple-400" : "text-green-400"}>{displayPrice.current.toFixed(2)} €</span>
-                                </>
-                              ) : (
-                                drink.priceGross.toFixed(2) + " €"
-                              )}
+                              {(() => {
+                                const discountPercent = getEmployeeDiscountPercent();
+                                let basePrice = drink.hasReduction && drink.reducedPrice !== undefined ? drink.reducedPrice : drink.priceGross;
+                                if (discountPercent > 0) {
+                                  basePrice = +(basePrice * (1 - discountPercent / 100)).toFixed(2);
+                                  return (
+                                    <>
+                                      <span className="text-sm line-through opacity-60 mr-1">{drink.priceGross.toFixed(2)} €</span>
+                                      <span className="text-purple-400">{basePrice.toFixed(2)} €</span>
+                                    </>
+                                  );
+                                }
+                                if (drink.hasReduction && drink.reducedPrice !== undefined) {
+                                  return (
+                                    <>
+                                      <span className="text-sm line-through opacity-60 mr-1">{drink.priceGross.toFixed(2)} €</span>
+                                      <span className="text-green-400">{drink.reducedPrice.toFixed(2)} €</span>
+                                    </>
+                                  );
+                                }
+                                return drink.priceGross.toFixed(2) + " €";
+                              })()}
                             </div>
                             {drink.hasDeposit && !noDeposit && <div className="text-[10px] opacity-80 mt-0.5 drop-shadow">+ {drink.depositAmount.toFixed(2)} € Pfand</div>}
-                            {drink.hasDeposit && noDeposit && <div className="text-[10px] opacity-80 mt-0.5 drop-shadow text-amber-400">Kein Pfand</div>}
+                            {noDeposit && drink.hasDeposit && <div className="text-[10px] opacity-80 mt-0.5 drop-shadow text-amber-400">Kein Pfand</div>}
                             <div className="text-[9px] opacity-60 mt-0.5">
                               {drink.taxRate}% MwSt.
                               {drink.hasReduction && drink.reductionPercent && <span className="ml-1 text-green-400 font-bold">-{drink.reductionPercent}%</span>}
-                              {isEmployee && getEmployeeDiscountPercent() > 0 && <span className="ml-1 text-purple-400 font-bold">· MA -{getEmployeeDiscountPercent()}%</span>}
+                              {getEmployeeDiscountPercent() > 0 && <span className="ml-1 text-purple-400 font-bold">MA -{getEmployeeDiscountPercent()}%</span>}
                             </div>
                           </div>
                         </button>
@@ -546,9 +571,7 @@ export default function POSPage() {
                     onClick={() => {
                       if (removeMode) {
                         const currentCount = orderFoodItems.get(food.id)?.quantity || 0;
-                        if (currentCount > 0) {
-                          updateItemQuantity("food", food.id, currentCount - 1);
-                        }
+                        if (currentCount > 0) updateItemQuantity("food", food.id, currentCount - 1);
                       } else {
                         addFood(food);
                       }
@@ -584,8 +607,8 @@ export default function POSPage() {
         </main>
 
         {hasItems && (
-          <div ref={receiptRef} className={`absolute z-40 shadow-2xl border-2 border-gray-500 rounded-xl overflow-hidden select-none ${isDragging ? "cursor-grabbing" : "cursor-grab"} ${receiptMinimized ? "w-auto" : "w-72 md:w-80"}`} style={{ left: receiptPos.x || "auto", top: receiptPos.y || "auto", right: receiptPos.x ? undefined : 8, bottom: receiptPos.y ? undefined : 8 }}>
-            <div onMouseDown={handleDragStart} onTouchStart={handleDragStart} className="bg-gray-700 px-3 py-2 flex items-center justify-between border-b border-gray-600">
+          <div ref={receiptRef} className={`absolute z-40 shadow-2xl border-2 border-gray-500 rounded-xl overflow-hidden select-none ${isDraggingReceipt ? "cursor-grabbing" : "cursor-grab"} ${receiptMinimized ? "w-auto" : "w-72 md:w-80"}`} style={{ left: receiptPos.x || "auto", top: receiptPos.y || "auto", right: receiptPos.x ? undefined : 8, bottom: receiptPos.y ? undefined : 8 }}>
+            <div onMouseDown={handleDragStartReceipt} onTouchStart={handleDragStartReceipt} className="bg-gray-700 px-3 py-2 flex items-center justify-between border-b border-gray-600">
               <span className="text-xs font-bold text-gray-300 flex items-center gap-1">🖐️ {totalDrinksCount + totalFoodsCount} Artikel</span>
               <div className="flex items-center gap-1"><button onClick={() => setReceiptMinimized((p) => !p)} className="text-gray-400 hover:text-white text-xs px-2 py-0.5 rounded bg-gray-600 hover:bg-gray-500">{receiptMinimized ? "▲" : "▼"}</button><button onClick={() => { setReceiptPos({ x:0, y:0 }); setReceiptMinimized(false); }} className="text-gray-400 hover:text-white text-xs px-2 py-0.5 rounded bg-gray-600 hover:bg-gray-500">⌂</button></div>
             </div>
@@ -620,107 +643,91 @@ export default function POSPage() {
         )}
       </div>
 
+      {/* ✅ VERSCHIEBBARE MODALS - alle am oberen Bildschirmrand */}
       {showResetConfirm && (
-        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/95 p-4 overflow-hidden">
-          <div className="bg-gray-800 rounded-2xl p-5 max-w-sm w-full shadow-2xl border border-gray-600">
-            <h2 className="text-lg font-bold mb-2 text-center">⚠️ Bestellung abschließen?</h2>
-            <div className="mb-3 bg-gray-700/50 rounded-lg p-2">
-              <label className="block text-xs text-gray-400 mb-1">Verkaufsstelle</label>
-              <select value={selectedSalesPointId ?? ""} onChange={(e) => setSelectedSalesPointId(parseInt(e.target.value))} className="w-full bg-gray-700 text-white text-sm rounded-lg px-2 py-1.5 border border-gray-600 focus:border-blue-500 focus:outline-none">
-                {salesPoints.map((sp) => (<option key={sp.id} value={sp.id}>{sp.name}</option>))}
-              </select>
-            </div>
-            <div className="text-center mb-3">
-              <p className="text-gray-300 text-sm">Gesamtbetrag:</p>
-              <p className="text-3xl font-extrabold text-green-400 tabular-nums">{grandTotal.toFixed(2)} €</p>
-              {netDeposit !== 0 && <p className="text-xs text-amber-400">(inkl. Pfand: {netDeposit > 0 ? "+" : ""}{netDeposit.toFixed(2)} €)</p>}
-              <p className="text-xs text-gray-400">{totalDrinksCount} Getränke · {totalFoodsCount} Speisen · {items.length + foodItems.length} Positionen</p>
-              {isEmployee && getEmployeeDiscountPercent() > 0 && <p className="text-xs text-purple-400 mt-1">💼 Mitarbeiter-Rabatt: -{getEmployeeDiscountPercent()}%</p>}
-            </div>
-            
-            {hasPourDrinks && !pourSent && (
-              <div className="mb-3 bg-red-900/40 border border-red-500 rounded-lg p-2 text-center">
-                <p className="text-xs text-red-300 font-bold">⚠️ {pourItemCount} Zapf-Getränk(e) noch nicht an die Zapfanlage gesendet!</p>
-                <p className="text-[10px] text-red-200 mt-1">Bitte erst senden, dann abschließen.</p>
-              </div>
-            )}
-            
-            {hasPourDrinks && (
-              <button 
-                onClick={sendToPour} 
-                disabled={pourSent} 
-                className={`w-full mb-3 py-2.5 rounded-lg text-sm font-bold border transition-all ${pourSent ? "bg-green-600 border-green-400 text-white cursor-default" : "bg-orange-600 hover:bg-orange-500 border-orange-400/40 text-white"}`}
-              >
-                {pourSent ? "✓ An Zapfanlage gesendet" : `🍺 ${pourItemCount}× an Zapfanlage senden`}
-              </button>
-            )}
-            <button onClick={() => setShowCalculator(true)} className="w-full mb-3 py-2 rounded-lg bg-blue-700/50 hover:bg-blue-600/50 text-blue-300 text-sm font-medium border border-blue-600/30 transition-all">🧮 Wechselgeld</button>
-            <p className="text-xs text-gray-400 mb-4 text-center">Die Bestellung wird gespeichert und der Zähler auf Null zurückgesetzt.</p>
-            <div className="flex gap-3">
-              <button onClick={() => setShowResetConfirm(false)} className="flex-1 py-2.5 rounded-xl font-bold bg-gray-600 hover:bg-gray-500 transition-all">Abbrechen</button>
-              <button 
-                onClick={handleReset} 
-                disabled={hasPourDrinks && !pourSent}
-                className={`flex-1 py-2.5 rounded-xl font-bold transition-all border ${hasPourDrinks && !pourSent ? "bg-gray-700 text-gray-500 border-gray-600 cursor-not-allowed" : "bg-amber-600 hover:bg-amber-500 border-amber-400/30"}`}
-              >
-                Ja, abschließen
-              </button>
-            </div>
+        <DraggableModal initialWidth="max-w-sm">
+          <h2 className="text-lg font-bold mb-2 text-center">⚠️ Bestellung abschließen?</h2>
+          <div className="mb-3 bg-gray-700/50 rounded-lg p-2">
+            <label className="block text-xs text-gray-400 mb-1">Verkaufsstelle</label>
+            <select value={selectedSalesPointId ?? ""} onChange={(e) => setSelectedSalesPointId(parseInt(e.target.value))} className="w-full bg-gray-700 text-white text-sm rounded-lg px-2 py-1.5 border border-gray-600 focus:border-blue-500 focus:outline-none">
+              {salesPoints.map((sp) => (<option key={sp.id} value={sp.id}>{sp.name}</option>))}
+            </select>
           </div>
-        </div>
+          <div className="text-center mb-3">
+            <p className="text-gray-300 text-sm">Gesamtbetrag:</p>
+            <p className="text-3xl font-extrabold text-green-400 tabular-nums">{grandTotal.toFixed(2)} €</p>
+            {netDeposit !== 0 && <p className="text-xs text-amber-400">(inkl. Pfand: {netDeposit > 0 ? "+" : ""}{netDeposit.toFixed(2)} €)</p>}
+            <p className="text-xs text-gray-400">{totalDrinksCount} Getränke · {totalFoodsCount} Speisen · {items.length + foodItems.length} Positionen</p>
+          </div>
+          {hasPourDrinks && !pourSent && (
+            <div className="mb-3 bg-red-900/40 border border-red-500 rounded-lg p-2 text-center">
+              <p className="text-xs text-red-300 font-bold">⚠️ {pourItemCount} Zapf-Getränk(e) noch nicht an die Zapfanlage gesendet!</p>
+            </div>
+          )}
+          {hasPourDrinks && (
+            <button onClick={sendToPour} disabled={pourSent} className={`w-full mb-3 py-2.5 rounded-lg text-sm font-bold border transition-all ${pourSent ? "bg-green-600 border-green-400 text-white cursor-default" : "bg-orange-600 hover:bg-orange-500 border-orange-400/40 text-white"}`}>
+              {pourSent ? "✓ An Zapfanlage gesendet" : `🍺 ${pourItemCount}× an Zapfanlage senden`}
+            </button>
+          )}
+          <button onClick={() => setShowCalculator(true)} className="w-full mb-3 py-2 rounded-lg bg-blue-700/50 hover:bg-blue-600/50 text-blue-300 text-sm font-medium border border-blue-600/30 transition-all">🧮 Wechselgeld</button>
+          <p className="text-xs text-gray-400 mb-4 text-center">Die Bestellung wird gespeichert und der Zähler auf Null zurückgesetzt.</p>
+          <div className="flex gap-3">
+            <button onClick={() => setShowResetConfirm(false)} className="flex-1 py-2.5 rounded-xl font-bold bg-gray-600 hover:bg-gray-500 transition-all">Abbrechen</button>
+            <button onClick={handleReset} disabled={hasPourDrinks && !pourSent} className={`flex-1 py-2.5 rounded-xl font-bold transition-all border ${hasPourDrinks && !pourSent ? "bg-gray-700 text-gray-500 border-gray-600 cursor-not-allowed" : "bg-amber-600 hover:bg-amber-500 border-amber-400/30"}`}>
+              Ja, abschließen
+            </button>
+          </div>
+        </DraggableModal>
       )}
-      
+
       {showCancelConfirm && (
-        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/95 p-4 overflow-hidden">
-          <div className="bg-gray-800 rounded-2xl p-5 max-w-sm w-full shadow-2xl border border-gray-600">
-            <h2 className="text-lg font-bold mb-3 text-center text-red-400">⚠️ Abbrechen?</h2>
-            <div className="text-center mb-4">
-              <p className="text-sm text-gray-300">Bestellung wirklich verwerfen?</p>
-              {pourSent && <p className="text-xs text-amber-400 mt-1">🍺 Zapf-Daten werden storniert.</p>}
-              <p className="text-xs text-gray-400 mt-1">{totalDrinksCount} Getränke · {totalFoodsCount} Speisen · {grandTotal.toFixed(2)} €</p>
-            </div>
-            <div className="flex gap-3">
-              <button onClick={() => setShowCancelConfirm(false)} className="flex-1 py-2.5 rounded-xl font-bold bg-gray-600">Weiter</button>
-              <button onClick={cancelOrder} className="flex-1 py-2.5 rounded-xl font-bold bg-red-600">Verwerfen</button>
-            </div>
+        <DraggableModal initialWidth="max-w-sm">
+          <h2 className="text-lg font-bold mb-3 text-center text-red-400">⚠️ Abbrechen?</h2>
+          <div className="text-center mb-4">
+            <p className="text-sm text-gray-300">Bestellung wirklich verwerfen?</p>
+            {pourSent && <p className="text-xs text-amber-400 mt-1">🍺 Zapf-Daten werden storniert.</p>}
+            <p className="text-xs text-gray-400 mt-1">{totalDrinksCount} Getränke · {totalFoodsCount} Speisen · {grandTotal.toFixed(2)} €</p>
           </div>
-        </div>
+          <div className="flex gap-3">
+            <button onClick={() => setShowCancelConfirm(false)} className="flex-1 py-2.5 rounded-xl font-bold bg-gray-600">Weiter</button>
+            <button onClick={cancelOrder} className="flex-1 py-2.5 rounded-xl font-bold bg-red-600">Verwerfen</button>
+          </div>
+        </DraggableModal>
       )}
-      
+
       {editingItem !== null && (
-        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/95 p-4 overflow-hidden">
-          <div className="bg-gray-800 rounded-2xl p-5 max-w-xs w-full shadow-2xl border border-gray-600">
-            <h3 className="text-lg font-bold mb-3 text-center">Anzahl ändern</h3>
-            <p className="text-sm text-gray-300 text-center mb-3">{editingItem.type === "drink" ? orderItems.get(editingItem.id)?.drinkName : orderFoodItems.get(editingItem.id)?.foodName}</p>
-            <input type="number" min="0" value={editQuantity} onChange={(e) => setEditQuantity(e.target.value)} className="w-full px-3 py-2 rounded-xl bg-gray-700 text-white text-lg font-bold text-center border border-gray-600 focus:border-blue-500 focus:outline-none tabular-nums mb-4" autoFocus />
-            <div className="flex gap-3">
-              <button onClick={() => setEditingItem(null)} className="flex-1 py-2.5 rounded-xl font-bold bg-gray-600">Abbrechen</button>
-              <button onClick={() => { const qty = parseInt(editQuantity); if (!isNaN(qty)) updateItemQuantity(editingItem.type, editingItem.id, qty); setEditingItem(null); }} className="flex-1 py-2.5 rounded-xl font-bold bg-amber-600">Speichern</button>
-            </div>
+        <DraggableModal initialWidth="max-w-xs">
+          <h3 className="text-lg font-bold mb-3 text-center">Anzahl ändern</h3>
+          <p className="text-sm text-gray-300 text-center mb-3">{editingItem.type === "drink" ? orderItems.get(editingItem.id)?.drinkName : orderFoodItems.get(editingItem.id)?.foodName}</p>
+          <input type="number" min="0" value={editQuantity} onChange={(e) => setEditQuantity(e.target.value)} className="w-full px-3 py-2 rounded-xl bg-gray-700 text-white text-lg font-bold text-center border border-gray-600 focus:border-blue-500 focus:outline-none tabular-nums mb-4" autoFocus />
+          <div className="flex gap-3">
+            <button onClick={() => setEditingItem(null)} className="flex-1 py-2.5 rounded-xl font-bold bg-gray-600">Abbrechen</button>
+            <button onClick={() => { const qty = parseInt(editQuantity); if (!isNaN(qty)) updateItemQuantity(editingItem.type, editingItem.id, qty); setEditingItem(null); }} className="flex-1 py-2.5 rounded-xl font-bold bg-amber-600">Speichern</button>
           </div>
-        </div>
+        </DraggableModal>
       )}
-      
-      {showCalculator && <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/95 p-4 overflow-hidden"><CalculatorModal total={grandTotal} onClose={() => setShowCalculator(false)} /></div>}
-      
+
+      {showCalculator && <CalculatorModal total={grandTotal} onClose={() => setShowCalculator(false)} />}
+
       {showSuccess && lastOrder && !handout && (
-        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/95 p-4 overflow-hidden pointer-events-none">
-          <div className="bg-green-700 text-white px-8 py-6 rounded-2xl shadow-2xl font-bold text-xl animate-bounce text-center">
-            ✅ Bestellung #{lastOrder.orderId}<br/>
-            <span className="text-3xl">{lastOrder.totalGross.toFixed(2)} €</span>
+        <DraggableModal initialWidth="max-w-sm">
+          <div className="text-center py-4">
+            <div className="text-5xl mb-3">✅</div>
+            <div className="text-xl font-bold">Bestellung #{lastOrder.orderId}</div>
+            <div className="text-3xl font-extrabold text-green-400 tabular-nums mt-2">{lastOrder.totalGross.toFixed(2)} €</div>
           </div>
-        </div>
+        </DraggableModal>
       )}
-      
+
       {handout && (
-        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-gray-900/98 p-4 overflow-hidden">
-          <div className="bg-gray-800 rounded-2xl w-full max-w-md shadow-2xl border border-gray-600 max-h-[92vh] flex flex-col">
-            <div className="p-4 border-b border-gray-700 shrink-0">
+        <DraggableModal initialWidth="max-w-md" zIndex={9999}>
+          <div className="-m-5">
+            <div className="p-4 border-b border-gray-700 shrink-0 rounded-t-2xl bg-gray-700/30">
               <h2 className="text-xl font-extrabold text-center">🥤 Ausgabe – Bestellung #{handout.orderId}</h2>
               <p className="text-xs text-gray-400 text-center mt-1">{handout.salesPointName} · {handout.totalGross.toFixed(2)} €{handout.depositReturnedCount > 0 && <span className="text-amber-400"> · {handout.depositReturnedCount} Becher zurück</span>}</p>
             </div>
-            <div className="flex-1 overflow-y-auto p-3 space-y-2">
-              {handout.items.map((item: any) => { 
+            <div className="p-3 space-y-2 max-h-[50vh] overflow-y-auto">
+              {handout.items.map((item) => { 
                 const done = !!handout.checked[item.drinkId]; 
                 const dc = drinks.find((d) => d.id === item.drinkId)?.color || "#6B7280"; 
                 return (
@@ -737,7 +744,7 @@ export default function POSPage() {
                   </button>
                 );
               })}
-              {handout.foodItems.map((item: any) => { 
+              {handout.foodItems.map((item) => { 
                 const done = !!handout.checked[-item.foodId]; 
                 const fc = foods.find((f) => f.id === item.foodId)?.color || "#10B981"; 
                 return (
@@ -755,10 +762,7 @@ export default function POSPage() {
             </div>
             <div className="p-4 border-t border-gray-700 shrink-0">
               <div className="w-full h-2 rounded-full bg-gray-700 mb-3 overflow-hidden">
-                <div 
-                  className="h-full bg-green-500 transition-all" 
-                  style={{width: `${handoutAllItems > 0 ? (handoutCheckedCount / handoutAllItems) * 100 : 0}%`}} 
-                />
+                <div className="h-full bg-green-500 transition-all" style={{width: `${handoutAllItems > 0 ? (handoutCheckedCount / handoutAllItems) * 100 : 0}%`}} />
               </div>
               <button 
                 onClick={() => setHandout(null)} 
@@ -769,7 +773,7 @@ export default function POSPage() {
               </button>
             </div>
           </div>
-        </div>
+        </DraggableModal>
       )}
     </div>
   );
@@ -780,7 +784,7 @@ function CalculatorModal({ total, onClose }: { total: number; onClose: () => voi
   const gn = parseFloat(given.replace(",", ".")) || 0; 
   const ch = gn - total;
   return (
-    <div className="bg-gray-800 rounded-2xl p-5 max-w-xs w-full shadow-2xl border border-gray-600">
+    <DraggableModal initialWidth="max-w-xs">
       <h3 className="text-lg font-bold mb-3 text-center">🧮 Wechselgeld</h3>
       <div className="text-center mb-3">
         <div className="text-xs text-gray-400">Zu zahlen</div>
@@ -795,6 +799,6 @@ function CalculatorModal({ total, onClose }: { total: number; onClose: () => voi
       </div>
       {gn > 0 && <div className="text-center mb-3 p-2 rounded-lg bg-gray-700/50"><div className="text-xs text-gray-400">Wechselgeld</div><div className={`text-2xl font-extrabold tabular-nums ${ch >= 0 ? "text-green-400" : "text-red-400"}`}>{ch >= 0 ? "" : "-"}{Math.abs(ch).toFixed(2)} €</div></div>}
       <button onClick={onClose} className="w-full py-2.5 rounded-xl font-bold bg-amber-600 hover:bg-amber-500">Schließen</button>
-    </div>
+    </DraggableModal>
   );
 }
