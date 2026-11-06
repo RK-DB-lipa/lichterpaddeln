@@ -12,20 +12,23 @@ type HandoutState = { orderId: number; salesPointName: string; items: Array<Orde
 
 const DEPOSIT_PER_RETURN = 2.0;
 
-// ✅ NEU: Wiederverwendbare DraggableModal-Komponente
+// ✅ KORRIGIERTE DraggableModal-Komponente mit 10% Abstand nach oben
 function DraggableModal({ children, initialWidth = "max-w-md", zIndex = 9999 }: { children: React.ReactNode; initialWidth?: string; zIndex?: number }) {
-  const [pos, setPos] = useState({ x: -1, y: 20 }); // -1 = noch nicht initialisiert
+  const [pos, setPos] = useState<{ x: number | null; y: number | null }>({ x: null, y: null });
   const [isDragging, setIsDragging] = useState(false);
   const dragOffset = useRef({ x: 0, y: 0 });
   const modalRef = useRef<HTMLDivElement>(null);
 
-  // Initial zentriert am oberen Bildschirmrand positionieren
+  // Initial positionieren: 10% Abstand nach oben, horizontal zentriert
   useEffect(() => {
-    if (pos.x === -1 && modalRef.current) {
+    if (pos.x === null && modalRef.current) {
       const rect = modalRef.current.getBoundingClientRect();
+      const viewportHeight = window.innerHeight;
+      const viewportWidth = window.innerWidth;
+      
       setPos({
-        x: Math.max(10, (window.innerWidth - rect.width) / 2),
-        y: 20
+        x: (viewportWidth - rect.width) / 2, // Horizontal zentriert
+        y: viewportHeight * 0.1 // 10% Abstand nach oben
       });
     }
   }, [pos.x]);
@@ -41,15 +44,30 @@ function DraggableModal({ children, initialWidth = "max-w-md", zIndex = 9999 }: 
   };
 
   const handleDragMove = useCallback((e: MouseEvent | TouchEvent) => {
-    if (!isDragging) return;
+    if (!isDragging || !modalRef.current) return;
+    
     const cx = "touches" in e ? e.touches[0].clientX : e.clientX;
     const cy = "touches" in e ? e.touches[0].clientY : e.clientY;
-    const newX = cx - dragOffset.current.x;
-    const newY = cy - dragOffset.current.y;
-    setPos({
-      x: Math.max(0, Math.min(newX, window.innerWidth - 100)),
-      y: Math.max(0, Math.min(newY, window.innerHeight - 50))
-    });
+    
+    const modalRect = modalRef.current.getBoundingClientRect();
+    const viewportWidth = window.innerWidth;
+    const viewportHeight = window.innerHeight;
+    
+    // Neue Position berechnen
+    let newX = cx - dragOffset.current.x;
+    let newY = cy - dragOffset.current.y;
+    
+    // ✅ X-Begrenzung: Modal darf maximal zur Hälfte aus dem Bildschirm raus
+    const minX = -(modalRect.width / 2);
+    const maxX = viewportWidth - (modalRect.width / 2);
+    newX = Math.max(minX, Math.min(newX, maxX));
+    
+    // ✅ Y-Begrenzung: Mindestens 10px Abstand nach oben, nicht über unteren Rand
+    const minY = 10;
+    const maxY = viewportHeight - 50; // Mindestens 50px vom unteren Rand
+    newY = Math.max(minY, Math.min(newY, maxY));
+    
+    setPos({ x: newX, y: newY });
   }, [isDragging]);
 
   const handleDragEnd = useCallback(() => setIsDragging(false), []);
@@ -69,14 +87,17 @@ function DraggableModal({ children, initialWidth = "max-w-md", zIndex = 9999 }: 
     }
   }, [isDragging, handleDragMove, handleDragEnd]);
 
+  // Solange die Position noch nicht berechnet wurde, zentrieren
+  const isInitial = pos.x === null;
+
   return (
     <div 
       ref={modalRef}
       className={`fixed ${initialWidth} w-full bg-gray-800 rounded-2xl shadow-2xl border border-gray-600 ${isDragging ? "cursor-grabbing" : ""}`}
       style={{ 
-        left: pos.x === -1 ? "50%" : pos.x, 
-        top: pos.y, 
-        transform: pos.x === -1 ? "translateX(-50%)" : "none",
+        left: isInitial ? "50%" : pos.x, 
+        top: isInitial ? "10%" : pos.y, 
+        transform: isInitial ? "translateX(-50%)" : "none",
         zIndex
       }}
     >
@@ -643,7 +664,7 @@ export default function POSPage() {
         )}
       </div>
 
-      {/* ✅ VERSCHIEBBARE MODALS - alle am oberen Bildschirmrand */}
+      {/* ✅ VERSCHIEBBARE MODALS - alle starten bei 10% Abstand nach oben */}
       {showResetConfirm && (
         <DraggableModal initialWidth="max-w-sm">
           <h2 className="text-lg font-bold mb-2 text-center">⚠️ Bestellung abschließen?</h2>
