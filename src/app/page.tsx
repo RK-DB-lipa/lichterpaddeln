@@ -12,26 +12,28 @@ type HandoutState = { orderId: number; salesPointName: string; items: Array<Orde
 
 const DEPOSIT_PER_RETURN = 2.0;
 
-// ✅ KORRIGIERTE DraggableModal-Komponente mit 10% Abstand nach oben
+// ✅ KORRIGIERTE DraggableModal-Komponente - TypeScript-Fix
 function DraggableModal({ children, initialWidth = "max-w-md", zIndex = 9999 }: { children: React.ReactNode; initialWidth?: string; zIndex?: number }) {
-  const [pos, setPos] = useState<{ x: number | null; y: number | null }>({ x: null, y: null });
+  const [initialized, setInitialized] = useState(false);
+  const [pos, setPos] = useState({ x: 0, y: 0 });
   const [isDragging, setIsDragging] = useState(false);
   const dragOffset = useRef({ x: 0, y: 0 });
   const modalRef = useRef<HTMLDivElement>(null);
 
   // Initial positionieren: 10% Abstand nach oben, horizontal zentriert
   useEffect(() => {
-    if (pos.x === null && modalRef.current) {
+    if (!initialized && modalRef.current) {
       const rect = modalRef.current.getBoundingClientRect();
       const viewportHeight = window.innerHeight;
       const viewportWidth = window.innerWidth;
       
       setPos({
-        x: (viewportWidth - rect.width) / 2, // Horizontal zentriert
-        y: viewportHeight * 0.1 // 10% Abstand nach oben
+        x: (viewportWidth - rect.width) / 2,
+        y: viewportHeight * 0.1
       });
+      setInitialized(true);
     }
-  }, [pos.x]);
+  }, [initialized]);
 
   const handleDragStart = (e: React.MouseEvent | React.TouchEvent) => {
     if (!modalRef.current) return;
@@ -53,18 +55,17 @@ function DraggableModal({ children, initialWidth = "max-w-md", zIndex = 9999 }: 
     const viewportWidth = window.innerWidth;
     const viewportHeight = window.innerHeight;
     
-    // Neue Position berechnen
     let newX = cx - dragOffset.current.x;
     let newY = cy - dragOffset.current.y;
     
-    // ✅ X-Begrenzung: Modal darf maximal zur Hälfte aus dem Bildschirm raus
+    // X-Begrenzung: Modal darf maximal zur Hälfte aus dem Bildschirm raus
     const minX = -(modalRect.width / 2);
     const maxX = viewportWidth - (modalRect.width / 2);
     newX = Math.max(minX, Math.min(newX, maxX));
     
-    // ✅ Y-Begrenzung: Mindestens 10px Abstand nach oben, nicht über unteren Rand
+    // Y-Begrenzung: Mindestens 10px Abstand nach oben, nicht über unteren Rand
     const minY = 10;
-    const maxY = viewportHeight - 50; // Mindestens 50px vom unteren Rand
+    const maxY = viewportHeight - 50;
     newY = Math.max(minY, Math.min(newY, maxY));
     
     setPos({ x: newX, y: newY });
@@ -87,17 +88,14 @@ function DraggableModal({ children, initialWidth = "max-w-md", zIndex = 9999 }: 
     }
   }, [isDragging, handleDragMove, handleDragEnd]);
 
-  // Solange die Position noch nicht berechnet wurde, zentrieren
-  const isInitial = pos.x === null;
-
   return (
     <div 
       ref={modalRef}
       className={`fixed ${initialWidth} w-full bg-gray-800 rounded-2xl shadow-2xl border border-gray-600 ${isDragging ? "cursor-grabbing" : ""}`}
       style={{ 
-        left: isInitial ? "50%" : pos.x, 
-        top: isInitial ? "10%" : pos.y, 
-        transform: isInitial ? "translateX(-50%)" : "none",
+        left: initialized ? pos.x : "50%", 
+        top: initialized ? pos.y : "10%", 
+        transform: initialized ? "none" : "translateX(-50%)",
         zIndex
       }}
     >
@@ -147,11 +145,9 @@ export default function POSPage() {
   const [lastOrder, setLastOrder] = useState<{ orderId: number; totalGross: number } | null>(null);
   const [handout, setHandout] = useState<HandoutState | null>(null);
 
-  // Mitarbeiter-Rabatt & Ohne-Pfand
   const [isEmployee, setIsEmployee] = useState(false);
   const [noDeposit, setNoDeposit] = useState(false);
 
-  // Aufklappbare Gruppen
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
 
   const [receiptMinimized, setReceiptMinimized] = useState(false);
@@ -454,12 +450,10 @@ export default function POSPage() {
               {events.map((ev) => (<option key={ev.id} value={ev.id}>{ev.name}</option>))}
             </select>
           )}
-          {/* Mitarbeiter-Checkbox */}
           <label className="flex items-center gap-1 text-xs bg-purple-700/50 hover:bg-purple-600/50 rounded-lg px-2 py-1 border border-purple-500 cursor-pointer">
             <input type="checkbox" checked={isEmployee} onChange={(e) => setIsEmployee(e.target.checked)} className="w-3 h-3" />
             <span>MITARBEITER</span>
           </label>
-          {/* Ohne-Pfand-Checkbox */}
           <label className="flex items-center gap-1 text-xs bg-amber-700/50 hover:bg-amber-600/50 rounded-lg px-2 py-1 border border-amber-500 cursor-pointer">
             <input type="checkbox" checked={noDeposit} onChange={(e) => setNoDeposit(e.target.checked)} className="w-3 h-3" />
             <span>Ohne Pfand</span>
@@ -664,7 +658,6 @@ export default function POSPage() {
         )}
       </div>
 
-      {/* ✅ VERSCHIEBBARE MODALS - alle starten bei 10% Abstand nach oben */}
       {showResetConfirm && (
         <DraggableModal initialWidth="max-w-sm">
           <h2 className="text-lg font-bold mb-2 text-center">⚠️ Bestellung abschließen?</h2>
