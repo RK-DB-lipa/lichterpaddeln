@@ -12,14 +12,14 @@ type HandoutState = { orderId: number; salesPointName: string; items: Array<Orde
 
 const DEPOSIT_PER_RETURN = 2.0;
 
-// ✅ MOBILE-OPTIMIERTES Fullscreen Modal - nimmt den GESAMTEN verfügbaren Platz ein
+// ✅ MOBILE-OPTIMIERTES Fullscreen Modal
 function FullscreenModal({ children, zIndex = 9999 }: { children: React.ReactNode; zIndex?: number }) {
   return (
     <div 
       className="fixed top-0 left-0 right-0 bottom-0 bg-black/95 flex flex-col overflow-hidden"
       style={{ 
         zIndex,
-        height: '100dvh', // Dynamic viewport height für Mobile
+        height: '100dvh',
         maxHeight: '100dvh'
       }}
     >
@@ -714,26 +714,134 @@ export default function POSPage() {
   );
 }
 
+// ✅ MOBILE-OPTIMIERTER Wechselgeldrechner mit eigenem Fullscreen-Layer
 function CalculatorModal({ total, onClose }: { total: number; onClose: () => void }) {
-  const [given, setGiven] = useState(""); 
-  const gn = parseFloat(given.replace(",", ".")) || 0; 
+  const [given, setGiven] = useState("");
+  const [viewportHeight, setViewportHeight] = useState<number | null>(null);
+
+  const gn = parseFloat(given.replace(",", ".")) || 0;
   const ch = gn - total;
+
+  // Mobile Tastatur / Browserleisten korrekt berücksichtigen
+  useEffect(() => {
+    function updateViewport() {
+      if (typeof window === "undefined") return;
+      const vv = window.visualViewport;
+      setViewportHeight(vv ? vv.height : window.innerHeight);
+    }
+
+    updateViewport();
+
+    window.addEventListener("resize", updateViewport);
+    window.visualViewport?.addEventListener("resize", updateViewport);
+    window.visualViewport?.addEventListener("scroll", updateViewport);
+
+    return () => {
+      window.removeEventListener("resize", updateViewport);
+      window.visualViewport?.removeEventListener("resize", updateViewport);
+      window.visualViewport?.removeEventListener("scroll", updateViewport);
+    };
+  }, []);
+
   return (
-    <FullscreenModal>
-      <h3 className="text-lg font-bold mb-3 text-center">🧮 Wechselgeld</h3>
-      <div className="text-center mb-3">
-        <div className="text-xs text-gray-400">Zu zahlen</div>
-        <div className="text-2xl font-extrabold text-green-400 tabular-nums">{total.toFixed(2)} €</div>
+    <div
+      className="fixed inset-0 bg-gray-900 text-white flex flex-col overflow-hidden"
+      style={{
+        zIndex: 12000,
+        height: viewportHeight ? `${viewportHeight}px` : "100dvh",
+        maxHeight: "100dvh",
+      }}
+    >
+      {/* Kopfzeile bleibt immer sichtbar */}
+      <div className="shrink-0 bg-gray-800 border-b border-gray-700 px-4 py-3">
+        <h3 className="text-lg font-bold text-center">🧮 Wechselgeld</h3>
+        <p className="text-xs text-gray-400 text-center mt-1">
+          Zu zahlen: <span className="text-green-400 font-bold">{total.toFixed(2)} €</span>
+        </p>
       </div>
-      <div className="mb-3">
-        <label className="block text-xs text-gray-400 mb-1">Erhalten (€)</label>
-        <input type="number" value={given} onChange={(e) => setGiven(e.target.value)} className="w-full px-3 py-2 rounded-xl bg-gray-700 text-white text-lg font-bold text-center border border-gray-600 focus:border-blue-500 focus:outline-none tabular-nums" placeholder="0,00" autoFocus />
+
+      {/* Inhalt scrollbar */}
+      <div className="flex-1 overflow-y-auto px-4 py-4">
+        <div className="max-w-md mx-auto space-y-4">
+          <div className="bg-gray-800 rounded-2xl border border-gray-700 p-4">
+            <label className="block text-sm text-gray-400 mb-2">
+              Erhalten (€)
+            </label>
+
+            <input
+              type="text"
+              inputMode="decimal"
+              value={given}
+              onChange={(e) => setGiven(e.target.value)}
+              className="w-full px-4 py-4 rounded-xl bg-gray-700 text-white text-2xl font-bold text-center border border-gray-600 focus:border-blue-500 focus:outline-none tabular-nums"
+              placeholder="0,00"
+            />
+
+            <div className="grid grid-cols-2 gap-2 mt-4">
+              {[5, 10, 20, 50].map((a) => (
+                <button
+                  key={a}
+                  onClick={() => setGiven(a.toFixed(2))}
+                  className="py-3 rounded-xl bg-gray-700 hover:bg-gray-600 active:bg-gray-500 text-base font-bold border border-gray-600"
+                >
+                  {a} €
+                </button>
+              ))}
+            </div>
+
+            <button
+              onClick={() => setGiven(total.toFixed(2))}
+              className="w-full mt-2 py-3 rounded-xl bg-blue-700 hover:bg-blue-600 active:bg-blue-800 text-base font-bold border border-blue-500"
+            >
+              Passend: {total.toFixed(2)} €
+            </button>
+          </div>
+
+          <div className="bg-gray-800 rounded-2xl border border-gray-700 p-4 text-center">
+            <div className="text-sm text-gray-400 mb-1">Wechselgeld</div>
+            <div
+              className={`text-4xl font-extrabold tabular-nums ${
+                gn <= 0 ? "text-gray-500" : ch >= 0 ? "text-green-400" : "text-red-400"
+              }`}
+            >
+              {gn <= 0 ? "0,00 €" : `${ch >= 0 ? "" : "-"}${Math.abs(ch).toFixed(2)} €`}
+            </div>
+
+            {gn > 0 && ch < 0 && (
+              <p className="text-xs text-red-300 mt-2">
+                Es fehlen noch {Math.abs(ch).toFixed(2)} €
+              </p>
+            )}
+          </div>
+
+          {/* Extra Abstand, falls Mobile-Browser trotzdem Leiste einblendet */}
+          <div className="h-6" />
+        </div>
       </div>
-      <div className="grid grid-cols-4 gap-2 mb-3">
-        {[5,10,20,50].map((a) => (<button key={a} onClick={() => setGiven(a.toFixed(2))} className="py-2 rounded-lg bg-gray-700 hover:bg-gray-600 text-sm font-bold">{a} €</button>))}
+
+      {/* Untere Buttons bleiben immer sichtbar */}
+      <div
+        className="shrink-0 bg-gray-800 border-t border-gray-700 px-4 pt-3"
+        style={{
+          paddingBottom: "calc(12px + env(safe-area-inset-bottom))",
+        }}
+      >
+        <div className="max-w-md mx-auto flex gap-3">
+          <button
+            onClick={() => setGiven("")}
+            className="flex-1 py-3 rounded-xl font-bold bg-gray-600 hover:bg-gray-500 active:bg-gray-700"
+          >
+            Leeren
+          </button>
+
+          <button
+            onClick={onClose}
+            className="flex-1 py-3 rounded-xl font-bold bg-amber-600 hover:bg-amber-500 active:bg-amber-700"
+          >
+            Schließen
+          </button>
+        </div>
       </div>
-      {gn > 0 && <div className="text-center mb-3 p-2 rounded-lg bg-gray-700/50"><div className="text-xs text-gray-400">Wechselgeld</div><div className={`text-2xl font-extrabold tabular-nums ${ch >= 0 ? "text-green-400" : "text-red-400"}`}>{ch >= 0 ? "" : "-"}{Math.abs(ch).toFixed(2)} €</div></div>}
-      <button onClick={onClose} className="w-full py-2.5 rounded-xl font-bold bg-amber-600 hover:bg-amber-500">Schließen</button>
-    </FullscreenModal>
+    </div>
   );
 }
